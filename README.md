@@ -2,6 +2,8 @@
 
 An independent, static file-browsing frontend for OpenList. It provides a responsive grid/list browser, deep-linked breadcrumbs, folder search and sorting, lazy image thumbnails, an on-demand full-resolution gallery, and Artplayer-based video playback.
 
+For instructions on using the deployed application, see the [OpenList Drive User Guide](docs/USER_GUIDE.md).
+
 ## Requirements
 
 - Node.js 20 or newer
