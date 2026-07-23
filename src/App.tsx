@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   ArrowDownAZ,
   ChevronDown,
@@ -18,14 +18,17 @@ import {
   Search,
   Settings2,
   ShieldAlert,
+  Upload,
   X,
 } from "lucide-react";
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
 import { Gallery } from "./components/Gallery";
 import { StorageManagement } from "./components/StorageManagement";
+import { UserManagement } from "./components/UserManagement";
+import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
 import { VideoModal } from "./components/VideoModal";
-import { ApiError, getCurrentUser, getFile, getToken, login, logout, setToken } from "./lib/api";
+import { ApiError, getCurrentUser, getFile, getToken, login, logout, setToken, uploadFile } from "./lib/api";
 import {
   directoryPathFromLocation,
   getFileKind,
@@ -38,12 +41,18 @@ import { useDirectory } from "./hooks/useDirectory";
 
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
-type AppView = "files" | "storages";
+type AppView = "files" | "storages" | "users";
 
 const ADMIN_ROLE = 2;
 
 function viewFromLocation(): AppView {
-  return window.location.pathname === "/admin/storages" ? "storages" : "files";
+  if (window.location.pathname === "/admin/storages") return "storages";
+  if (window.location.pathname === "/admin/users") return "users";
+  return "files";
+}
+
+function isAdminView(view: AppView) {
+  return view === "storages" || view === "users";
 }
 
 export default function App() {
@@ -66,7 +75,16 @@ export default function App() {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [user, setUser] = useState<OpenListUser | null>(null);
   const [userResolved, setUserResolved] = useState(false);
+  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadControllers = useRef(new Map<string, AbortController>());
+  const uploadSequence = useRef(0);
+  const currentPathRef = useRef(currentPath);
   const { data, loading, error, refresh } = useDirectory(currentPath, passwords[currentPath] ?? "", appView === "files");
+
+  useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
+  useEffect(() => () => { uploadControllers.current.forEach((controller) => controller.abort()); }, []);
 
   const loadUser = useCallback(() => {
     const controller = new AbortController();
@@ -112,9 +130,9 @@ export default function App() {
     setSidebarOpen(false);
   }, []);
 
-  const navigateToStorages = useCallback(() => {
-    window.history.pushState({}, "", "/admin/storages");
-    setAppView("storages");
+  const navigateToAdmin = useCallback((view: Exclude<AppView, "files">) => {
+    window.history.pushState({}, "", view === "users" ? "/admin/users" : "/admin/storages");
+    setAppView(view);
     setSidebarOpen(false);
   }, []);
 
@@ -175,6 +193,60 @@ export default function App() {
     localStorage.setItem("openlist-drive-view", mode);
   };
 
+  const canUpload = !loading && data.write && (user?.role === ADMIN_ROLE || data.write_content_bypass || Boolean(user && (user.permission & (1 << 3))));
+  const updateUpload = useCallback((id: string, update: Partial<UploadEntry>) => {
+    setUploads((items) => items.map((item) => item.id === id ? { ...item, ...update } : item));
+  }, []);
+  const enqueueUploads = useCallback((files: FileList | File[]) => {
+    if (!canUpload) return;
+    const destination = currentPath;
+    const password = passwords[destination] ?? "";
+    for (const file of Array.from(files)) {
+      if (!file || file.name === "") continue;
+      const id = `${Date.now()}-${uploadSequence.current++}`;
+      const controller = new AbortController();
+      uploadControllers.current.set(id, controller);
+      setUploads((items) => [...items, { id, name: file.name, size: file.size, progress: 0, status: "uploading" }]);
+      void uploadFile(file, joinPath(destination, file.name), {
+        password,
+        signal: controller.signal,
+        onProgress: (progress) => updateUpload(id, { progress }),
+      }).then(() => {
+        updateUpload(id, { progress: 100, status: "success" });
+        if (currentPathRef.current === destination) refresh();
+      }).catch((reason: unknown) => {
+        if (reason instanceof DOMException && reason.name === "AbortError") {
+          updateUpload(id, { status: "cancelled" });
+        } else {
+          updateUpload(id, { status: "error", error: reason instanceof ApiError ? reason.message : "Upload failed." });
+        }
+      }).finally(() => uploadControllers.current.delete(id));
+    }
+  }, [canUpload, currentPath, passwords, refresh, updateUpload]);
+  const cancelUpload = useCallback((id: string) => uploadControllers.current.get(id)?.abort(), []);
+  const dismissUpload = useCallback((id: string) => setUploads((items) => items.filter((item) => item.id !== id)), []);
+  const clearCompletedUploads = useCallback(() => setUploads((items) => items.filter((item) => item.status === "uploading")), []);
+  const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) enqueueUploads(event.target.files);
+    event.target.value = "";
+  };
+  const onDragEnter = (event: DragEvent<HTMLElement>) => {
+    if (!canUpload || !Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    setDragActive(true);
+  };
+  const onDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!canUpload) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    if (!canUpload) return;
+    event.preventDefault();
+    setDragActive(false);
+    if (event.dataTransfer.files.length) enqueueUploads(event.dataTransfer.files);
+  };
+
   const submitLogin = async (username: string, password: string, otp: string) => {
     setLoginBusy(true);
     setLoginError("");
@@ -226,7 +298,7 @@ export default function App() {
         </div>
         <nav className="sidebar__nav" aria-label="Main navigation">
           <button className={`nav-item${appView === "files" ? " nav-item--active" : ""}`} onClick={() => navigate("/")}><HardDrive size={20} /><span>My files</span></button>
-          {user?.role === ADMIN_ROLE && <button className={`nav-item${appView === "storages" ? " nav-item--active" : ""}`} onClick={navigateToStorages}><Settings2 size={20} /><span>Storage management</span></button>}
+          {user?.role === ADMIN_ROLE && <button className={`nav-item${isAdminView(appView) ? " nav-item--active" : ""}`} onClick={() => navigateToAdmin("storages")}><Settings2 size={20} /><span>Settings</span></button>}
         </nav>
         <div className="storage-summary">
           <div className="storage-summary__title"><Cloud size={18} /><strong>OpenList storage</strong></div>
@@ -239,7 +311,7 @@ export default function App() {
       {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
 
       <main className="main-content">
-        <div className={`topbar${appView === "storages" ? " topbar--admin" : ""}`}>
+        <div className={`topbar${isAdminView(appView) ? " topbar--admin" : ""}`}>
           {appView === "files" ? (
             <>
               <nav className="breadcrumbs" aria-label="Breadcrumb">
@@ -258,18 +330,20 @@ export default function App() {
           ) : (
             <nav className="breadcrumbs" aria-label="Breadcrumb">
               <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={navigateToStorages}>Storage management</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>Settings</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? "Users" : "Storage"}</button></span>
             </nav>
           )}
         </div>
 
-        {appView === "files" ? <section className="browser-section" aria-labelledby="folder-title">
+        {appView === "files" ? <section className={`browser-section${dragActive ? " browser-section--drop-active" : ""}`} aria-labelledby="folder-title" onDragEnter={onDragEnter} onDragOver={onDragOver} onDragLeave={(event) => { if (event.currentTarget === event.target) setDragActive(false); }} onDrop={onDrop}>
           <div className="browser-heading">
             <div>
               <h1 id="folder-title">{currentName}</h1>
               <p>{loading ? "Loading files" : `${data.total} ${data.total === 1 ? "item" : "items"}`}{data.provider && data.provider !== "unknown" ? ` · ${data.provider}` : ""}</p>
             </div>
             <div className="browser-actions">
+              {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => fileInputRef.current?.click()}><Upload size={17} /> Upload</button></>}
               <button className="icon-button bordered-button" onClick={refresh} disabled={loading} title="Refresh folder"><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
               <label className="sort-select" title="Sort files">
                 <ArrowDownAZ size={18} />
@@ -306,6 +380,7 @@ export default function App() {
           )}
 
           {data.readme && !loading && <div className="folder-readme"><h2>About this folder</h2><p>{data.readme}</p></div>}
+          {dragActive && <div className="file-drop-target" aria-hidden="true"><Upload size={34} /><strong>Drop files to upload</strong><span>{currentPath}</span></div>}
         </section> : (
           <AdminStorageGate
             user={user}
@@ -313,6 +388,8 @@ export default function App() {
             signedIn={isSignedIn}
             onLogin={() => setLoginOpen(true)}
             onStorageChanged={refresh}
+            view={appView}
+            onSelectView={navigateToAdmin}
           />
         )}
       </main>
@@ -320,7 +397,8 @@ export default function App() {
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
       {video && <VideoModal {...video} onClose={() => setVideo(null)} />}
       {mediaLoading && <div className="media-loading" role="status"><LoaderCircle className="spin" size={21} /><span>Preparing {mediaLoading}</span></div>}
-      {notice && <div className="toast" role="alert"><ShieldAlert size={19} /><span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
+      {notice && <div className={`toast${uploads.length ? " toast--with-uploads" : ""}`} role="alert"><ShieldAlert size={19} /><span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
+      <UploadQueue uploads={uploads} onCancel={cancelUpload} onDismiss={dismissUpload} onClearCompleted={clearCompletedUploads} />
       {loginOpen && <LoginDialog busy={loginBusy} error={loginError} needsOtp={needsOtp} onClose={() => { setLoginOpen(false); setLoginError(""); }} onSubmit={submitLogin} />}
       {passwordOpen && <PasswordDialog path={currentPath} onClose={() => setPasswordOpen(false)} onSubmit={(password) => { setPasswords((value) => ({ ...value, [currentPath]: password })); setPasswordOpen(false); }} />}
     </div>
@@ -377,12 +455,16 @@ function AdminStorageGate({
   signedIn,
   onLogin,
   onStorageChanged,
+  view,
+  onSelectView,
 }: {
   user: OpenListUser | null;
   resolved: boolean;
   signedIn: boolean;
   onLogin: () => void;
   onStorageChanged: () => void;
+  view: Exclude<AppView, "files">;
+  onSelectView: (view: Exclude<AppView, "files">) => void;
 }) {
   if (!resolved) {
     return <div className="admin-gate" role="status"><LoaderCircle className="spin" size={28} /><span>Checking administrator access</span></div>;
@@ -392,7 +474,7 @@ function AdminStorageGate({
       <div className="admin-gate">
         <Settings2 size={38} />
         <h1>Administrator sign-in required</h1>
-        <p>Sign in with an OpenList administrator account to manage storage connections.</p>
+        <p>Sign in with an OpenList administrator account to manage settings.</p>
         <button className="primary-button" onClick={onLogin}><LogIn size={18} /> Sign in</button>
       </div>
     );
@@ -402,9 +484,9 @@ function AdminStorageGate({
       <div className="admin-gate">
         <ShieldAlert size={38} />
         <h1>Administrator access required</h1>
-        <p>Your OpenList account does not have permission to manage storages.</p>
+        <p>Your OpenList account does not have permission to manage settings.</p>
       </div>
     );
   }
-  return <StorageManagement onStorageChanged={onStorageChanged} />;
+  return <><nav className="admin-tabs" aria-label="Settings sections"><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>Storage</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>Users</button></nav>{view === "users" ? <UserManagement /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
 }

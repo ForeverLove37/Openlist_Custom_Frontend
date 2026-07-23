@@ -88,6 +88,24 @@ describe("storage payload helpers", () => {
     });
   });
 
+  it("maps a remote OpenList token to its driver-specific addition schema", () => {
+    const values = {
+      ...emptyStorageForm("OpenList"),
+      mountPath: "/Archive",
+      address: "https://remote.example.com/",
+      token: "remote-token",
+      rootFolderPath: "/Shared",
+    };
+    const storage = storageFromForm(values);
+    expect(storage.driver).toBe("OpenList");
+    expect(JSON.parse(storage.addition)).toMatchObject({
+      url: "https://remote.example.com",
+      token: "remote-token",
+      root_folder_path: "/Shared",
+      pass_refresh_flag_to_upsteam: false,
+    });
+  });
+
   it("classifies working, disabled, and failed storage states", () => {
     expect(storageStatus(existingStorage()).label).toBe("Connected");
     expect(storageStatus(existingStorage({ disabled: true })).label).toBe("Disabled");

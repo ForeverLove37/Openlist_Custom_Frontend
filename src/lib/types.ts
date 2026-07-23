@@ -21,6 +21,8 @@ export interface DirectoryData {
   total: number;
   readme: string;
   header: string;
+  write: boolean;
+  write_content_bypass: boolean;
   provider: string;
 }
 
@@ -35,13 +37,35 @@ export interface OpenListUser {
   username: string;
   role: number;
   disabled: boolean;
+  base_path: string;
+  permission: number;
+  sso_id?: string;
+  allow_ldap?: boolean;
+}
+
+export interface ManagedUser extends OpenListUser {
+  password?: string;
+}
+
+export interface UserPage {
+  content: ManagedUser[] | null;
+  total: number;
+}
+
+export interface UserFormValues {
+  username: string;
+  password: string;
+  basePath: string;
+  permission: number;
+  disabled: boolean;
+  allowLdap: boolean;
 }
 
 export interface LoginResult {
   token: string;
 }
 
-export type StorageDriver = "Local" | "WebDav";
+export type StorageDriver = "Local" | "WebDav" | "OpenList" | "AList V3";
 
 export interface OpenListStorage {
   id: number;
@@ -89,6 +113,7 @@ export interface StorageFormValues {
   username: string;
   password: string;
   tlsInsecureSkipVerify: boolean;
+  token: string;
 }
 
 export type ViewMode = "grid" | "list";

@@ -45,4 +45,21 @@ describe("StorageForm", () => {
     ).toBeInTheDocument();
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("submits the remote OpenList URL and token fields", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<StorageForm saving={false} onClose={vi.fn()} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("button", { name: /OpenList/ }));
+    fireEvent.change(screen.getByLabelText(/Mount path/), { target: { value: "/Remote" } });
+    fireEvent.change(screen.getByLabelText(/Remote URL/), { target: { value: "https://remote.example.com" } });
+    fireEvent.change(screen.getByLabelText(/Authentication token/), { target: { value: "token-value" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add storage" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      driver: "OpenList",
+      address: "https://remote.example.com",
+      token: "token-value",
+    });
+  });
 });

@@ -3,9 +3,11 @@ import type {
   DirectoryData,
   FileDetail,
   LoginResult,
+  ManagedUser,
   OpenListStorage,
   OpenListUser,
   StoragePage,
+  UserPage,
 } from "./types";
 
 const TOKEN_KEY = "openlist-drive-token";
@@ -131,4 +133,91 @@ export function setStorageEnabled(id: number, enabled: boolean) {
 
 export function deleteStorage(id: number) {
   return request<unknown>(`/admin/storage/delete?id=${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+export function listUsers(signal?: AbortSignal) {
+  return request<UserPage>("/admin/user/list?page=1&per_page=0", {}, signal);
+}
+
+export function getUser(id: number, signal?: AbortSignal) {
+  return request<ManagedUser>(`/admin/user/get?id=${encodeURIComponent(id)}`, {}, signal);
+}
+
+export function createUser(user: ManagedUser) {
+  return request<unknown>("/admin/user/create", {
+    method: "POST",
+    body: JSON.stringify(user),
+  });
+}
+
+export function updateUser(user: ManagedUser) {
+  return request<unknown>("/admin/user/update", {
+    method: "POST",
+    body: JSON.stringify(user),
+  });
+}
+
+export function deleteUser(id: number) {
+  return request<unknown>(`/admin/user/delete?id=${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+interface UploadOptions {
+  password?: string;
+  signal?: AbortSignal;
+  onProgress?: (progress: number) => void;
+}
+
+export function uploadFile(file: File, path: string, options: UploadOptions = {}) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    const finish = () => options.signal?.removeEventListener("abort", abort);
+
+    if (options.signal?.aborted) {
+      reject(new DOMException("Upload cancelled", "AbortError"));
+      return;
+    }
+
+    xhr.open("PUT", "/api/fs/form");
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.setRequestHeader("File-Path", encodeURIComponent(path));
+    xhr.setRequestHeader("Overwrite", "true");
+    xhr.setRequestHeader("Last-Modified", String(file.lastModified));
+    if (options.password) xhr.setRequestHeader("Password", options.password);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", token);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.onerror = () => {
+      finish();
+      reject(new ApiError("Could not reach the OpenList server.", xhr.status || 0));
+    };
+    xhr.onabort = () => {
+      finish();
+      reject(new DOMException("Upload cancelled", "AbortError"));
+    };
+    xhr.onload = () => {
+      finish();
+      let payload: ApiEnvelope<unknown>;
+      try {
+        payload = JSON.parse(xhr.responseText) as ApiEnvelope<unknown>;
+      } catch {
+        reject(new ApiError("The server returned an invalid upload response.", xhr.status));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300 || payload.code !== 200) {
+        reject(new ApiError(payload.message || "Upload failed.", xhr.status === 200 ? payload.code : xhr.status, payload.code, payload.data));
+        return;
+      }
+      options.onProgress?.(100);
+      resolve();
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+
+    const form = new FormData();
+    form.append("file", file, file.name);
+    xhr.send(form);
+  });
 }

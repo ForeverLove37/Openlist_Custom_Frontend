@@ -7,6 +7,8 @@ const emptyDirectory: DirectoryData = {
   total: 0,
   readme: "",
   header: "",
+  write: false,
+  write_content_bypass: false,
   provider: "",
 };
 

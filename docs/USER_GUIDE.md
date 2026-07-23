@@ -1,6 +1,6 @@
 # OpenList Drive User Guide
 
-OpenList Drive is a browser-based file manager for viewing and downloading files stored in OpenList. Open the application at:
+OpenList Drive is a browser-based file manager for viewing, downloading, and (when permitted) uploading files stored in OpenList. Open the application at:
 
 **https://test.erailab.com**
 
@@ -92,6 +92,16 @@ Press Escape or select the close button above the player to return to the folder
 
 OpenList creates a fresh download link when you perform either action. Large files may take a moment to begin downloading, depending on the connected storage provider.
 
+## Upload files
+
+The **Upload** button appears when your account has upload permission for the current folder.
+
+1. Open the destination folder.
+2. Select **Upload** and choose one or more files, or drag files into the file area.
+3. Watch the upload manager in the bottom-right corner for progress, completion, or errors.
+
+Uploads are placed in the folder that was open when the files were selected or dropped, even if you navigate away while they are in progress. Select the close icon on an active upload to cancel it. Completed entries can be dismissed or cleared together.
+
 ## Unlock a protected folder
 
 If a folder is password protected, the application displays a password prompt:
@@ -115,21 +125,33 @@ An OpenList account and a folder password serve different purposes. Signing in d
 Storage management is available only to OpenList administrators.
 
 1. Sign in with an administrator account.
-2. Select **Storage management** in the sidebar.
+2. Select **Settings** in the sidebar, then select the **Storage** tab.
 3. Select **Add storage**.
-4. Choose **Local** or **WebDAV**, complete the required fields, and submit the form.
+4. Choose **Local**, **WebDAV**, **OpenList**, or **AList V3**, complete the required fields, and submit the form.
 
 For Local storage, the root folder is a path inside the OpenList container. The host directory must already be mounted into that container through Docker before it can be selected here. Do not use `/` as the root folder because that can expose backend system files.
 
 For WebDAV storage, enter the full server URL and credentials. Enable the unverified TLS certificate option only for a trusted server whose certificate cannot be validated normally.
 
+For a remote OpenList or AList V3 mount, choose the matching driver and provide the remote server URL and authentication token. The mount path is the local name users will see in this OpenList instance. Use a token intended for the remote service and treat it like a password; the app sends it only to the local OpenList admin API, which stores the connection configuration.
+
 The storage list provides these controls:
 
 - Enable or disable a storage with its switch.
-- Edit supported Local and WebDAV connections with the pencil button.
+- Edit supported Local, WebDAV, OpenList, and AList V3 connections with the pencil button.
 - Delete a storage with the trash button. This removes the connection from OpenList but does not delete files at the source.
 
 A **Connected** status means the storage initialized successfully. When a connection fails, its error message appears below the status; correct the connection settings and save again.
+
+## Manage users
+
+User management is available only to OpenList administrators.
+
+1. Select **Settings** in the sidebar, then select the **Users** tab.
+2. Select **Add user** to create a standard OpenList user.
+3. Set the username, password, base path, and the permissions the user needs.
+
+The permissions include uploads and file-management operations as well as WebDAV read and write access. Enabling WebDAV write also enables WebDAV read, because write access requires a readable WebDAV session. When editing an existing account, leave the password blank to keep its current password. Administrator and guest accounts can be edited but cannot be deleted through this interface.
 
 ## Troubleshooting
 

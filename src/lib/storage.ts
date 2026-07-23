@@ -44,6 +44,35 @@ const webDavAdditionDefaults = {
   tls_insecure_skip_verify: false,
 };
 
+const remoteOpenListAdditionDefaults = {
+  root_folder_path: "/",
+  url: "",
+  meta_password: "",
+  username: "",
+  password: "",
+  token: "",
+  pass_ip_to_upsteam: true,
+  pass_ua_to_upsteam: true,
+  forward_archive_requests: true,
+  pass_refresh_flag_to_upsteam: false,
+};
+
+const remoteAListAdditionDefaults = {
+  root_folder_path: "/",
+  url: "",
+  meta_password: "",
+  username: "",
+  password: "",
+  token: "",
+  pass_ip_to_upsteam: true,
+  pass_ua_to_upsteam: true,
+  forward_archive_requests: true,
+};
+
+function isRemoteDriver(driver: StorageDriver) {
+  return driver === "OpenList" || driver === "AList V3";
+}
+
 function parseAddition(storage?: OpenListStorage): Record<string, unknown> {
   if (!storage?.addition) return {};
   try {
@@ -67,18 +96,21 @@ export function emptyStorageForm(driver: StorageDriver = "Local"): StorageFormVa
     mountPath: "",
     order: 0,
     remark: "",
-    rootFolderPath: driver === "WebDav" ? "/" : "",
+    rootFolderPath: driver === "Local" ? "" : "/",
     thumbnail: true,
     showHidden: true,
     address: "",
     username: "",
     password: "",
     tlsInsecureSkipVerify: false,
+    token: "",
   };
 }
 
 export function storageToForm(storage: OpenListStorage): StorageFormValues {
-  const driver: StorageDriver = storage.driver === "WebDav" ? "WebDav" : "Local";
+  const driver: StorageDriver = storage.driver === "WebDav" || storage.driver === "OpenList" || storage.driver === "AList V3"
+    ? storage.driver
+    : "Local";
   const addition = parseAddition(storage);
   return {
     driver,
@@ -92,12 +124,14 @@ export function storageToForm(storage: OpenListStorage): StorageFormValues {
     username: String(addition.username ?? ""),
     password: String(addition.password ?? ""),
     tlsInsecureSkipVerify: Boolean(addition.tls_insecure_skip_verify ?? false),
+    token: String(addition.token ?? ""),
   };
 }
 
 export function storageFromForm(values: StorageFormValues, existing?: OpenListStorage): OpenListStorage {
   const previousAddition = parseAddition(existing);
   const isLocal = values.driver === "Local";
+  const isRemote = isRemoteDriver(values.driver);
   const addition = isLocal
     ? {
         ...localAdditionDefaults,
@@ -106,7 +140,8 @@ export function storageFromForm(values: StorageFormValues, existing?: OpenListSt
         thumbnail: values.thumbnail,
         show_hidden: values.showHidden,
       }
-    : {
+    : values.driver === "WebDav"
+      ? {
         ...webDavAdditionDefaults,
         ...previousAddition,
         address: values.address.trim().replace(/\/$/, ""),
@@ -114,6 +149,13 @@ export function storageFromForm(values: StorageFormValues, existing?: OpenListSt
         password: values.password,
         root_folder_path: values.rootFolderPath.trim() || "/",
         tls_insecure_skip_verify: values.tlsInsecureSkipVerify,
+      }
+      : {
+        ...(values.driver === "OpenList" ? remoteOpenListAdditionDefaults : remoteAListAdditionDefaults),
+        ...previousAddition,
+        url: values.address.trim().replace(/\/$/, ""),
+        token: values.token.trim(),
+        root_folder_path: values.rootFolderPath.trim() || "/",
       };
 
   return {
@@ -124,7 +166,7 @@ export function storageFromForm(values: StorageFormValues, existing?: OpenListSt
     order: Number.isFinite(values.order) ? values.order : 0,
     driver: values.driver,
     cache_expiration: isLocal ? 0 : (existing?.cache_expiration || 30),
-    web_proxy: isLocal ? false : (existing?.web_proxy ?? true),
+    web_proxy: isLocal ? false : (existing?.web_proxy ?? (isRemote ? false : true)),
     webdav_policy: "native_proxy",
     remark: values.remark.trim(),
     addition: JSON.stringify(addition),

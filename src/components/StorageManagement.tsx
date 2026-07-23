@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Server,
   Trash2,
   X,
 } from "lucide-react";
@@ -167,12 +168,13 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
           {storages.map((storage) => {
             const status = storageStatus(storage);
             const busy = actionId === storage.id;
-            const supported = storage.driver === "Local" || storage.driver === "WebDav";
+            const supported = storage.driver === "Local" || storage.driver === "WebDav" || storage.driver === "OpenList" || storage.driver === "AList V3";
+            const remote = storage.driver === "OpenList" || storage.driver === "AList V3";
             return (
               <article className="storage-row" key={storage.id}>
                 <div className="storage-identity">
-                  <span className={`storage-driver-icon storage-driver-icon--${storage.driver === "WebDav" ? "webdav" : "local"}`}>
-                    {storage.driver === "WebDav" ? <Globe2 size={21} /> : <HardDrive size={21} />}
+                  <span className={`storage-driver-icon storage-driver-icon--${remote ? "remote" : storage.driver === "WebDav" ? "webdav" : "local"}`}>
+                    {remote ? <Server size={21} /> : storage.driver === "WebDav" ? <Globe2 size={21} /> : <HardDrive size={21} />}
                   </span>
                   <span><strong>{storage.mount_path}</strong>{storage.remark && <small>{storage.remark}</small>}</span>
                 </div>
@@ -263,6 +265,7 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
   };
 
   const isLocal = values.driver === "Local";
+  const isRemote = values.driver === "OpenList" || values.driver === "AList V3";
   return (
     <div className="dialog-backdrop storage-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
       <section className="storage-dialog" role="dialog" aria-modal="true" aria-labelledby="storage-form-title">
@@ -274,7 +277,9 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
           <fieldset className="driver-options" disabled={editing || saving}>
             <legend>Driver</legend>
             <button type="button" className={isLocal ? "active" : ""} onClick={() => selectDriver("Local")} aria-pressed={isLocal}><HardDrive size={21} /><span><strong>Local</strong><small>Container filesystem</small></span></button>
-            <button type="button" className={!isLocal ? "active" : ""} onClick={() => selectDriver("WebDav")} aria-pressed={!isLocal}><Globe2 size={21} /><span><strong>WebDAV</strong><small>Remote server</small></span></button>
+            <button type="button" className={values.driver === "WebDav" ? "active" : ""} onClick={() => selectDriver("WebDav")} aria-pressed={values.driver === "WebDav"}><Globe2 size={21} /><span><strong>WebDAV</strong><small>Remote server</small></span></button>
+            <button type="button" className={values.driver === "OpenList" ? "active" : ""} onClick={() => selectDriver("OpenList")} aria-pressed={values.driver === "OpenList"}><Server size={21} /><span><strong>OpenList</strong><small>Remote OpenList v4</small></span></button>
+            <button type="button" className={values.driver === "AList V3" ? "active" : ""} onClick={() => selectDriver("AList V3")} aria-pressed={values.driver === "AList V3"}><Server size={21} /><span><strong>AList V3</strong><small>Remote AList v3</small></span></button>
           </fieldset>
 
           <div className="form-section">
@@ -287,20 +292,26 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
           </div>
 
           <div className="form-section">
-            <h3>{isLocal ? "Local connection" : "WebDAV connection"}</h3>
+            <h3>{isLocal ? "Local connection" : isRemote ? `${values.driver} connection` : "WebDAV connection"}</h3>
             {isLocal ? (
               <div className="form-grid">
                 <label className="form-field form-field--wide"><span>Root folder path in container <b>*</b></span><input required placeholder="/data" value={values.rootFolderPath} onChange={(event) => set("rootFolderPath", event.target.value)} /></label>
                 <label className="check-field"><input type="checkbox" checked={values.thumbnail} onChange={(event) => set("thumbnail", event.target.checked)} /><span>Generate media thumbnails</span></label>
                 <label className="check-field"><input type="checkbox" checked={values.showHidden} onChange={(event) => set("showHidden", event.target.checked)} /><span>Show hidden files</span></label>
               </div>
-            ) : (
+            ) : values.driver === "WebDav" ? (
               <div className="form-grid">
                 <label className="form-field form-field--wide"><span>WebDAV URL <b>*</b></span><input required type="url" placeholder="https://dav.example.com/remote.php/dav/files/user" value={values.address} onChange={(event) => set("address", event.target.value)} /></label>
                 <label className="form-field"><span>Username <b>*</b></span><input required autoComplete="username" value={values.username} onChange={(event) => set("username", event.target.value)} /></label>
                 <label className="form-field"><span>Password <b>*</b></span><input required type="password" autoComplete="new-password" value={values.password} onChange={(event) => set("password", event.target.value)} /></label>
                 <label className="form-field form-field--wide"><span>Remote root folder <b>*</b></span><input required placeholder="/" value={values.rootFolderPath} onChange={(event) => set("rootFolderPath", event.target.value)} /></label>
                 <label className="check-field check-field--warning"><input type="checkbox" checked={values.tlsInsecureSkipVerify} onChange={(event) => set("tlsInsecureSkipVerify", event.target.checked)} /><span>Allow an unverified TLS certificate</span></label>
+              </div>
+            ) : (
+              <div className="form-grid">
+                <label className="form-field form-field--wide"><span>Remote URL <b>*</b></span><input required type="url" placeholder="https://openlist.example.com" value={values.address} onChange={(event) => set("address", event.target.value)} /></label>
+                <label className="form-field form-field--wide"><span>Authentication token <b>*</b></span><input required type="password" autoComplete="new-password" value={values.token} onChange={(event) => set("token", event.target.value)} /></label>
+                <label className="form-field form-field--wide"><span>Remote root folder</span><input required placeholder="/" value={values.rootFolderPath} onChange={(event) => set("rootFolderPath", event.target.value)} /></label>
               </div>
             )}
           </div>
@@ -344,6 +355,15 @@ function validateStorage(values: StorageFormValues) {
       if (url.protocol !== "http:" && url.protocol !== "https:") return "WebDAV URL must use HTTP or HTTPS.";
     } catch {
       return "Enter a valid WebDAV URL.";
+    }
+  }
+  if (values.driver === "OpenList" || values.driver === "AList V3") {
+    if (!values.address.trim() || !values.token.trim()) return "Remote URL and authentication token are required.";
+    try {
+      const url = new URL(values.address);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return "Remote URL must use HTTP or HTTPS.";
+    } catch {
+      return "Enter a valid remote URL.";
     }
   }
   return "";
