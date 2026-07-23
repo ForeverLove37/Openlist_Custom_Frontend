@@ -10,7 +10,6 @@ const baseStorage: OpenListStorage = {
   status: "",
   addition: "{}",
   remark: "",
-  modified: "",
   disabled: false,
   disable_index: false,
   enable_sign: false,

@@ -53,7 +53,7 @@ export interface OpenListStorage {
   status: string;
   addition: string;
   remark: string;
-  modified: string;
+  modified?: string;
   disabled: boolean;
   disable_index: boolean;
   enable_sign: boolean;

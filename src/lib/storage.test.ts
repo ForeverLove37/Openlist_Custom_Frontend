@@ -63,6 +63,7 @@ describe("storage payload helpers", () => {
       web_proxy: false,
       webdav_policy: "native_proxy",
     });
+    expect(storage).not.toHaveProperty("modified");
     expect(JSON.parse(storage.addition)).toMatchObject({
       root_folder_path: "/data/media",
       thumbnail: false,
