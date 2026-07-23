@@ -3,7 +3,9 @@ import type {
   DirectoryData,
   FileDetail,
   LoginResult,
+  OpenListStorage,
   OpenListUser,
+  StoragePage,
 } from "./types";
 
 const TOKEN_KEY = "openlist-drive-token";
@@ -13,6 +15,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly code?: number,
+    public readonly data?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -59,6 +62,7 @@ async function request<T>(
       payload.message || "Request failed.",
       response.ok ? payload.code : response.status,
       payload.code,
+      payload.data,
     );
   }
   return payload.data;
@@ -96,4 +100,35 @@ export function getCurrentUser(signal?: AbortSignal) {
 
 export function logout() {
   return request<unknown>("/auth/logout");
+}
+
+export function listStorages(signal?: AbortSignal) {
+  return request<StoragePage>("/admin/storage/list?page=1&per_page=0", {}, signal);
+}
+
+export function getStorage(id: number, signal?: AbortSignal) {
+  return request<OpenListStorage>(`/admin/storage/get?id=${encodeURIComponent(id)}`, {}, signal);
+}
+
+export function createStorage(storage: OpenListStorage) {
+  return request<{ id: number }>("/admin/storage/create", {
+    method: "POST",
+    body: JSON.stringify(storage),
+  });
+}
+
+export function updateStorage(storage: OpenListStorage) {
+  return request<unknown>("/admin/storage/update", {
+    method: "POST",
+    body: JSON.stringify(storage),
+  });
+}
+
+export function setStorageEnabled(id: number, enabled: boolean) {
+  const action = enabled ? "enable" : "disable";
+  return request<unknown>(`/admin/storage/${action}?id=${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+export function deleteStorage(id: number) {
+  return request<unknown>(`/admin/storage/delete?id=${encodeURIComponent(id)}`, { method: "POST" });
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getFile, setToken } from "./api";
+import { getFile, listStorages, setStorageEnabled, setToken } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -38,5 +38,28 @@ describe("OpenList API client", () => {
       code: 401,
       message: "Guest user is disabled",
     });
+  });
+
+  it("calls admin storage endpoints with authentication and explicit actions", async () => {
+    setToken("admin-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 200,
+        message: "success",
+        data: { content: [], total: 0 },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 200,
+        message: "success",
+        data: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await listStorages();
+    await setStorageEnabled(12, false);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/admin/storage/list?page=1&per_page=0");
+    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("Authorization")).toBe("admin-token");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/admin/storage/disable?id=12");
+    expect(fetchMock.mock.calls[1][1]?.method).toBe("POST");
   });
 });

@@ -16,12 +16,14 @@ import {
   Menu,
   RefreshCw,
   Search,
+  Settings2,
   ShieldAlert,
   X,
 } from "lucide-react";
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
 import { Gallery } from "./components/Gallery";
+import { StorageManagement } from "./components/StorageManagement";
 import { VideoModal } from "./components/VideoModal";
 import { ApiError, getCurrentUser, getFile, getToken, login, logout, setToken } from "./lib/api";
 import {
@@ -36,8 +38,16 @@ import { useDirectory } from "./hooks/useDirectory";
 
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
+type AppView = "files" | "storages";
+
+const ADMIN_ROLE = 2;
+
+function viewFromLocation(): AppView {
+  return window.location.pathname === "/admin/storages" ? "storages" : "files";
+}
 
 export default function App() {
+  const [appView, setAppView] = useState<AppView>(viewFromLocation);
   const [currentPath, setCurrentPath] = useState(() => directoryPathFromLocation(window.location.pathname));
   const [passwords, setPasswords] = useState<Record<string, string>>({});
   const [view, setView] = useState<ViewMode>(() => localStorage.getItem("openlist-drive-view") === "list" ? "list" : "grid");
@@ -55,7 +65,8 @@ export default function App() {
   const [needsOtp, setNeedsOtp] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [user, setUser] = useState<OpenListUser | null>(null);
-  const { data, loading, error, refresh } = useDirectory(currentPath, passwords[currentPath] ?? "");
+  const [userResolved, setUserResolved] = useState(false);
+  const { data, loading, error, refresh } = useDirectory(currentPath, passwords[currentPath] ?? "", appView === "files");
 
   const loadUser = useCallback(() => {
     const controller = new AbortController();
@@ -64,22 +75,27 @@ export default function App() {
       .catch(() => {
         if (getToken()) setToken("");
         setUser(null);
-      });
+      })
+      .finally(() => { if (!controller.signal.aborted) setUserResolved(true); });
     return () => controller.abort();
   }, []);
 
   useEffect(loadUser, [loadUser]);
 
   useEffect(() => {
-    const handlePopState = () => setCurrentPath(directoryPathFromLocation(window.location.pathname));
+    const handlePopState = () => {
+      setAppView(viewFromLocation());
+      setCurrentPath(directoryPathFromLocation(window.location.pathname));
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
+    if (appView !== "files") return;
     if (error?.status === 401) setLoginOpen(true);
     if (error?.status === 403 && !(passwords[currentPath] ?? "")) setPasswordOpen(true);
-  }, [currentPath, error, passwords]);
+  }, [appView, currentPath, error, passwords]);
 
   useEffect(() => {
     if (!notice) return;
@@ -90,8 +106,15 @@ export default function App() {
   const navigate = useCallback((path: string) => {
     const normalized = path || "/";
     window.history.pushState({}, "", locationFromDirectoryPath(normalized));
+    setAppView("files");
     setCurrentPath(normalized);
     setQuery("");
+    setSidebarOpen(false);
+  }, []);
+
+  const navigateToStorages = useCallback(() => {
+    window.history.pushState({}, "", "/admin/storages");
+    setAppView("storages");
     setSidebarOpen(false);
   }, []);
 
@@ -160,6 +183,7 @@ export default function App() {
       setToken(result.token);
       setLoginOpen(false);
       setNeedsOtp(false);
+      setUserResolved(false);
       loadUser();
       refresh();
     } catch (reason) {
@@ -178,6 +202,8 @@ export default function App() {
     try { await logout(); } catch { /* Clear the local session even if the server is unavailable. */ }
     setToken("");
     setUser(null);
+    setUserResolved(true);
+    navigate("/");
     refresh();
   };
 
@@ -199,7 +225,8 @@ export default function App() {
           <button className="icon-button sidebar__close" onClick={() => setSidebarOpen(false)} title="Close navigation"><X size={20} /></button>
         </div>
         <nav className="sidebar__nav" aria-label="Main navigation">
-          <button className="nav-item nav-item--active" onClick={() => navigate("/")}><HardDrive size={20} /><span>My files</span></button>
+          <button className={`nav-item${appView === "files" ? " nav-item--active" : ""}`} onClick={() => navigate("/")}><HardDrive size={20} /><span>My files</span></button>
+          {user?.role === ADMIN_ROLE && <button className={`nav-item${appView === "storages" ? " nav-item--active" : ""}`} onClick={navigateToStorages}><Settings2 size={20} /><span>Storage management</span></button>}
         </nav>
         <div className="storage-summary">
           <div className="storage-summary__title"><Cloud size={18} /><strong>OpenList storage</strong></div>
@@ -212,22 +239,31 @@ export default function App() {
       {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
 
       <main className="main-content">
-        <div className="topbar">
-          <nav className="breadcrumbs" aria-label="Breadcrumb">
-            <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
-            {breadcrumbParts.map((part, index) => {
-              const path = `/${breadcrumbParts.slice(0, index + 1).join("/")}`;
-              return <span className="breadcrumb-part" key={path}><ChevronRight size={17} /><button onClick={() => navigate(path)}>{part}</button></span>;
-            })}
-          </nav>
-          <label className="search-box">
-            <Search size={19} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search in ${currentName}`} aria-label="Search current folder" />
-            {query && <button onClick={() => setQuery("")} title="Clear search"><X size={17} /></button>}
-          </label>
+        <div className={`topbar${appView === "storages" ? " topbar--admin" : ""}`}>
+          {appView === "files" ? (
+            <>
+              <nav className="breadcrumbs" aria-label="Breadcrumb">
+                <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
+                {breadcrumbParts.map((part, index) => {
+                  const path = `/${breadcrumbParts.slice(0, index + 1).join("/")}`;
+                  return <span className="breadcrumb-part" key={path}><ChevronRight size={17} /><button onClick={() => navigate(path)}>{part}</button></span>;
+                })}
+              </nav>
+              <label className="search-box">
+                <Search size={19} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search in ${currentName}`} aria-label="Search current folder" />
+                {query && <button onClick={() => setQuery("")} title="Clear search"><X size={17} /></button>}
+              </label>
+            </>
+          ) : (
+            <nav className="breadcrumbs" aria-label="Breadcrumb">
+              <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={navigateToStorages}>Storage management</button></span>
+            </nav>
+          )}
         </div>
 
-        <section className="browser-section" aria-labelledby="folder-title">
+        {appView === "files" ? <section className="browser-section" aria-labelledby="folder-title">
           <div className="browser-heading">
             <div>
               <h1 id="folder-title">{currentName}</h1>
@@ -270,7 +306,15 @@ export default function App() {
           )}
 
           {data.readme && !loading && <div className="folder-readme"><h2>About this folder</h2><p>{data.readme}</p></div>}
-        </section>
+        </section> : (
+          <AdminStorageGate
+            user={user}
+            resolved={userResolved}
+            signedIn={isSignedIn}
+            onLogin={() => setLoginOpen(true)}
+            onStorageChanged={refresh}
+          />
+        )}
       </main>
 
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
@@ -325,4 +369,42 @@ function ErrorState({ error, onRetry, onLogin, onPassword }: { error: ApiError; 
       </div>
     </div>
   );
+}
+
+function AdminStorageGate({
+  user,
+  resolved,
+  signedIn,
+  onLogin,
+  onStorageChanged,
+}: {
+  user: OpenListUser | null;
+  resolved: boolean;
+  signedIn: boolean;
+  onLogin: () => void;
+  onStorageChanged: () => void;
+}) {
+  if (!resolved) {
+    return <div className="admin-gate" role="status"><LoaderCircle className="spin" size={28} /><span>Checking administrator access</span></div>;
+  }
+  if (!signedIn) {
+    return (
+      <div className="admin-gate">
+        <Settings2 size={38} />
+        <h1>Administrator sign-in required</h1>
+        <p>Sign in with an OpenList administrator account to manage storage connections.</p>
+        <button className="primary-button" onClick={onLogin}><LogIn size={18} /> Sign in</button>
+      </div>
+    );
+  }
+  if (user?.role !== ADMIN_ROLE) {
+    return (
+      <div className="admin-gate">
+        <ShieldAlert size={38} />
+        <h1>Administrator access required</h1>
+        <p>Your OpenList account does not have permission to manage storages.</p>
+      </div>
+    );
+  }
+  return <StorageManagement onStorageChanged={onStorageChanged} />;
 }

@@ -110,6 +110,27 @@ An OpenList account and a folder password serve different purposes. Signing in d
 - Search, sorting, layout, gallery, video, and download controls remain available on mobile screens.
 - List view can be scrolled horizontally when file details do not fit on screen.
 
+## Manage storage connections
+
+Storage management is available only to OpenList administrators.
+
+1. Sign in with an administrator account.
+2. Select **Storage management** in the sidebar.
+3. Select **Add storage**.
+4. Choose **Local** or **WebDAV**, complete the required fields, and submit the form.
+
+For Local storage, the root folder is a path inside the OpenList container. The host directory must already be mounted into that container through Docker before it can be selected here. Do not use `/` as the root folder because that can expose backend system files.
+
+For WebDAV storage, enter the full server URL and credentials. Enable the unverified TLS certificate option only for a trusted server whose certificate cannot be validated normally.
+
+The storage list provides these controls:
+
+- Enable or disable a storage with its switch.
+- Edit supported Local and WebDAV connections with the pencil button.
+- Delete a storage with the trash button. This removes the connection from OpenList but does not delete files at the source.
+
+A **Connected** status means the storage initialized successfully. When a connection fails, its error message appears below the status; correct the connection settings and save again.
+
 ## Troubleshooting
 
 ### Sign in required

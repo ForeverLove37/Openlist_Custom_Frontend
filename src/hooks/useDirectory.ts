@@ -10,7 +10,7 @@ const emptyDirectory: DirectoryData = {
   provider: "",
 };
 
-export function useDirectory(path: string, password: string) {
+export function useDirectory(path: string, password: string, enabled = true) {
   const [data, setData] = useState<DirectoryData>(emptyDirectory);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -20,6 +20,11 @@ export function useDirectory(path: string, password: string) {
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     const controller = new AbortController();
     const id = ++requestId.current;
     setLoading(true);
@@ -40,7 +45,7 @@ export function useDirectory(path: string, password: string) {
       });
 
     return () => controller.abort();
-  }, [path, password, revision]);
+  }, [enabled, path, password, revision]);
 
   return { data, loading, error, refresh };
 }
