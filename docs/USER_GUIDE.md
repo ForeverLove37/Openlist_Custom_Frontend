@@ -135,13 +135,23 @@ For WebDAV storage, enter the full server URL and credentials. Enable the unveri
 
 For a remote OpenList or AList V3 mount, choose the matching driver and provide the remote server URL and authentication token. The mount path is the local name users will see in this OpenList instance. Use a token intended for the remote service and treat it like a password; the app sends it only to the local OpenList admin API, which stores the connection configuration.
 
+For WebDAV and remote OpenList/AList drivers, choose a transfer mode:
+
+- **Native Proxy** streams downloads through OpenList. Enable range proxying when clients need reliable seeking through the proxy.
+- **302 Redirect** sends the client to the provider's direct download URL and generally reduces load on the OpenList server.
+
 The storage list provides these controls:
 
 - Enable or disable a storage with its switch.
 - Edit supported Local, WebDAV, OpenList, and AList V3 connections with the pencil button.
+- For an OpenList or AList V3 connection, select the network button to inspect downstream storages and change their Native Proxy or 302 Redirect mode. The remote token remains on the server.
 - Delete a storage with the trash button. This removes the connection from OpenList but does not delete files at the source.
 
 A **Connected** status means the storage initialized successfully. When a connection fails, its error message appears below the status; correct the connection settings and save again.
+
+## Use native management
+
+Administrators can select **Settings**, then **Native Management**, to open the original OpenList management interface inside the custom app. The panel uses the current verified administrator session and does not expose the native OpenList port to the public internet. If the administrator session expires, sign in again through the custom app and reopen the tab.
 
 ## Manage users
 

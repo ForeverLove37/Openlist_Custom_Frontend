@@ -24,6 +24,7 @@ import {
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
 import { Gallery } from "./components/Gallery";
+import { NativeManagement } from "./components/NativeManagement";
 import { StorageManagement } from "./components/StorageManagement";
 import { UserManagement } from "./components/UserManagement";
 import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
@@ -41,18 +42,19 @@ import { useDirectory } from "./hooks/useDirectory";
 
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
-type AppView = "files" | "storages" | "users";
+type AppView = "files" | "storages" | "users" | "native";
 
 const ADMIN_ROLE = 2;
 
 function viewFromLocation(): AppView {
   if (window.location.pathname === "/admin/storages") return "storages";
   if (window.location.pathname === "/admin/users") return "users";
+  if (window.location.pathname === "/admin/native") return "native";
   return "files";
 }
 
 function isAdminView(view: AppView) {
-  return view === "storages" || view === "users";
+  return view === "storages" || view === "users" || view === "native";
 }
 
 export default function App() {
@@ -142,7 +144,12 @@ export default function App() {
   }, []);
 
   const navigateToAdmin = useCallback((view: Exclude<AppView, "files">) => {
-    window.history.pushState({}, "", view === "users" ? "/admin/users" : "/admin/storages");
+    const routes: Record<Exclude<AppView, "files">, string> = {
+      storages: "/admin/storages",
+      users: "/admin/users",
+      native: "/admin/native",
+    };
+    window.history.pushState({}, "", routes[view]);
     setAppView(view);
     setSidebarOpen(false);
   }, []);
@@ -343,7 +350,7 @@ export default function App() {
             <nav className="breadcrumbs" aria-label="Breadcrumb">
               <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
               <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>Settings</button></span>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? "Users" : "Storage"}</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? "Users" : appView === "native" ? "Native Management" : "Storage"}</button></span>
             </nav>
           )}
         </div>
@@ -402,6 +409,7 @@ export default function App() {
             onStorageChanged={refresh}
             view={appView}
             onSelectView={navigateToAdmin}
+            thumbnailSessionReady={thumbnailSessionReady}
           />
         )}
       </main>
@@ -469,6 +477,7 @@ function AdminStorageGate({
   onStorageChanged,
   view,
   onSelectView,
+  thumbnailSessionReady,
 }: {
   user: OpenListUser | null;
   resolved: boolean;
@@ -477,6 +486,7 @@ function AdminStorageGate({
   onStorageChanged: () => void;
   view: Exclude<AppView, "files">;
   onSelectView: (view: Exclude<AppView, "files">) => void;
+  thumbnailSessionReady: boolean;
 }) {
   if (!resolved) {
     return <div className="admin-gate" role="status"><LoaderCircle className="spin" size={28} /><span>Checking administrator access</span></div>;
@@ -500,5 +510,5 @@ function AdminStorageGate({
       </div>
     );
   }
-  return <><nav className="admin-tabs" aria-label="Settings sections"><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>Storage</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>Users</button></nav>{view === "users" ? <UserManagement /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
+  return <><nav className="admin-tabs" aria-label="Settings sections"><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>Storage</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>Users</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>Native Management</button></nav>{view === "users" ? <UserManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
 }

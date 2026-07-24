@@ -135,6 +135,17 @@ export function deleteStorage(id: number) {
   return request<unknown>(`/admin/storage/delete?id=${encodeURIComponent(id)}`, { method: "POST" });
 }
 
+export function listRemoteStorages(connectionId: number, signal?: AbortSignal) {
+  return request<StoragePage>(`/custom/remote-storages/${encodeURIComponent(connectionId)}`, {}, signal);
+}
+
+export function updateRemoteStorageTransferMode(connectionId: number, storageId: number, webProxy: boolean, proxyRange: boolean) {
+  return request<OpenListStorage>(`/custom/remote-storages/${encodeURIComponent(connectionId)}/${encodeURIComponent(storageId)}/transfer`, {
+    method: "PATCH",
+    body: JSON.stringify({ web_proxy: webProxy, proxy_range: proxyRange }),
+  });
+}
+
 export function listUsers(signal?: AbortSignal) {
   return request<UserPage>("/admin/user/list?page=1&per_page=0", {}, signal);
 }

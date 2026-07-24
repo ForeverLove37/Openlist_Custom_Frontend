@@ -11,6 +11,7 @@ Environment=NODE_ENV=production
 Environment=OPENLIST_API_URL=http://127.0.0.1:5244
 Environment=THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
 Environment=FFMPEG_PATH=/usr/bin/ffmpeg
+Environment=THUMBNAIL_MAX_REDIRECTS=5
 Environment=PORT=3000
 Environment=HOST=127.0.0.1
 ExecStart=/usr/bin/node /root/openlist_front/custom-frontend/server.js

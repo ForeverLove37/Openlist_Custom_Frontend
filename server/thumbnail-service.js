@@ -67,7 +67,8 @@ async function videoFrameToWebp(rawUrl, targetFile, ffmpegPath) {
     const command = ffmpeg(rawUrl)
       .seekInput(3)
       .outputOptions(["-frames:v 1"])
-      .format("image2")
+      .videoCodec("png")
+      .format("image2pipe")
       .on("error", reject);
     const frame = command.pipe();
     pipeline(frame, thumbnailTransformer(), createWriteStream(targetFile))
@@ -88,12 +89,20 @@ function sessionPassword(session, filePath) {
   return match;
 }
 
+function finalResponseUrl(response, fallbackUrl) {
+  const responseUrl = response.request?.res?.responseUrl
+    || response.request?._redirectable?._currentUrl
+    || fallbackUrl;
+  return resolveRawUrl(responseUrl, fallbackUrl);
+}
+
 export function createThumbnailService({
   openListBaseUrl = process.env.OPENLIST_API_URL || "http://127.0.0.1:5244",
   cacheDir = process.env.THUMBNAIL_CACHE_DIR || path.resolve(".cache/thumbnails"),
   cacheTtlMs = Number(process.env.THUMBNAIL_CACHE_TTL_MS || 86_400_000),
   sessionTtlMs = Number(process.env.THUMBNAIL_SESSION_TTL_MS || 1_800_000),
   ffmpegPath = process.env.FFMPEG_PATH || DEFAULT_FFMPEG_PATH,
+  maxRedirects = Number(process.env.THUMBNAIL_MAX_REDIRECTS || 5),
   httpClient = axios,
 } = {}) {
   const sessions = new Map();
@@ -125,11 +134,12 @@ export function createThumbnailService({
     sessions.set(id, {
       id,
       userId: user.id,
+      role: user.role,
       authorization,
       expiresAt: Date.now() + sessionTtlMs,
       passwords: new Map([[normalizedDirectory, typeof password === "string" ? password : ""]]),
     });
-    return { id, userId: user.id };
+    return { id, userId: user.id, role: user.role };
   }
 
   function updateSession(id, directoryPath = "/", password = "") {
@@ -175,13 +185,13 @@ export function createThumbnailService({
     }
   }
 
-  async function fetchImageSource(rawUrl, session) {
+  async function fetchSource(rawUrl, session) {
     let source;
     try {
       source = await httpClient.get(rawUrl, {
         responseType: "stream",
         timeout: 60_000,
-        maxRedirects: 5,
+        maxRedirects,
         validateStatus: () => true,
         headers: sourceHeaders(rawUrl, session.authorization),
       });
@@ -193,22 +203,29 @@ export function createThumbnailService({
       throw new Error(`Thumbnail source returned HTTP ${source.status}.`);
     }
     if (!source.data || typeof source.data.pipe !== "function") throw new Error("Thumbnail source did not return a readable stream.");
-    return source.data;
+    return source;
   }
 
   async function generateThumbnail(session, filePath, type, cacheFile) {
     const rawUrl = await fetchRawUrl(session, filePath);
     const temporaryFile = path.join(cacheDir, `.${path.basename(cacheFile)}-${randomBytes(8).toString("hex")}.tmp`);
+    let source;
     try {
+      source = await fetchSource(rawUrl, session);
       if (type === "image") {
-        await pipeline(await fetchImageSource(rawUrl, session), thumbnailTransformer(), createWriteStream(temporaryFile));
+        await pipeline(source.data, thumbnailTransformer(), createWriteStream(temporaryFile));
       } else {
-        await videoFrameToWebp(rawUrl, temporaryFile, ffmpegPath);
+        const videoUrl = finalResponseUrl(source, rawUrl);
+        source.data.destroy();
+        source = undefined;
+        await videoFrameToWebp(videoUrl, temporaryFile, ffmpegPath);
       }
       await rename(temporaryFile, cacheFile);
     } catch (error) {
       await unlink(temporaryFile).catch(() => {});
       throw error;
+    } finally {
+      source?.data?.destroy?.();
     }
   }
 
@@ -242,5 +259,5 @@ export function createThumbnailService({
     return inFlight.get(flightKey);
   }
 
-  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir, ffmpegPath };
+  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir, ffmpegPath, maxRedirects };
 }

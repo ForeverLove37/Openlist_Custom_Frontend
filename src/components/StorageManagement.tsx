@@ -7,6 +7,7 @@ import {
   Globe2,
   HardDrive,
   LoaderCircle,
+  Network,
   Pencil,
   Plus,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
 } from "../lib/api";
 import { emptyStorageForm, storageFromForm, storageStatus, storageToForm } from "../lib/storage";
 import type { OpenListStorage, StorageDriver, StorageFormValues } from "../lib/types";
+import { RemoteStorageManagement } from "./RemoteStorageManagement";
 
 interface StorageManagementProps {
   onStorageChanged: () => void;
@@ -37,6 +39,7 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
   const [message, setMessage] = useState("");
   const [formStorage, setFormStorage] = useState<OpenListStorage | null | undefined>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<OpenListStorage | null>(null);
+  const [remoteTarget, setRemoteTarget] = useState<OpenListStorage | null>(null);
   const [actionId, setActionId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -163,7 +166,7 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
       ) : (
         <div className="storage-list">
           <div className="storage-list__header" aria-hidden="true">
-            <span>Mount path</span><span>Driver</span><span>Status</span><span>Order</span><span>Actions</span>
+            <span>Mount path</span><span>Driver</span><span>Status</span><span>Transfer</span><span>Actions</span>
           </div>
           {storages.map((storage) => {
             const status = storageStatus(storage);
@@ -183,13 +186,14 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
                   <span className={`status-badge status-badge--${status.tone}`}>{status.label}</span>
                   {status.tone === "danger" && <small title={storage.status}>{storage.status}</small>}
                 </div>
-                <div className="storage-cell" data-label="Order"><span>{storage.order}</span></div>
+                <div className="storage-cell" data-label="Transfer"><span>{storage.driver === "Local" ? "Local" : storage.web_proxy ? "Native Proxy" : "302 Redirect"}</span></div>
                 <div className="storage-actions">
                   <label className="switch-control" title={storage.disabled ? "Enable storage" : "Disable storage"}>
                     <input type="checkbox" checked={!storage.disabled} disabled={busy} onChange={() => void toggle(storage)} />
                     <span aria-hidden="true" />
                     <span className="sr-only">{storage.disabled ? "Enable" : "Disable"} {storage.mount_path}</span>
                   </label>
+                  {remote && <button className="icon-button subtle-button" onClick={() => setRemoteTarget(storage)} disabled={busy} title={`Manage downstream storages in ${storage.mount_path}`}><Network size={18} /></button>}
                   <button className="icon-button subtle-button" onClick={() => void edit(storage)} disabled={busy || !supported} title={supported ? `Edit ${storage.mount_path}` : `${storage.driver} editing is not supported here`}>
                     {busy ? <LoaderCircle className="spin" size={18} /> : <Pencil size={18} />}
                   </button>
@@ -217,6 +221,7 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
           onConfirm={() => void remove()}
         />
       )}
+      {remoteTarget && <RemoteStorageManagement connection={remoteTarget} onClose={() => setRemoteTarget(null)} />}
     </section>
   );
 }
@@ -315,6 +320,15 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
               </div>
             )}
           </div>
+
+          {!isLocal && <div className="form-section">
+            <h3>Transfer mode</h3>
+            <div className="transfer-control transfer-control--form" aria-label="Storage transfer mode">
+              <button type="button" className={values.webProxy ? "active" : ""} onClick={() => set("webProxy", true)} aria-pressed={values.webProxy}>Native Proxy</button>
+              <button type="button" className={!values.webProxy ? "active" : ""} onClick={() => set("webProxy", false)} aria-pressed={!values.webProxy}>302 Redirect</button>
+            </div>
+            {values.webProxy && <label className="check-field transfer-range"><input type="checkbox" checked={values.proxyRange} onChange={(event) => set("proxyRange", event.target.checked)} /><span>Proxy range requests through OpenList</span></label>}
+          </div>}
 
           {error && <div className="form-error" role="alert">{error}</div>}
           <footer className="storage-dialog__footer">

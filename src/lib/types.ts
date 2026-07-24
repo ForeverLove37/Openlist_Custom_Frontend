@@ -114,6 +114,8 @@ export interface StorageFormValues {
   password: string;
   tlsInsecureSkipVerify: boolean;
   token: string;
+  webProxy: boolean;
+  proxyRange: boolean;
 }
 
 export type ViewMode = "grid" | "list";

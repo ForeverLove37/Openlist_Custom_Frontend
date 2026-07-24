@@ -21,7 +21,7 @@ describe("thumbnail service helpers", () => {
   });
 
   it("verifies a session with OpenList before storing it in memory", async () => {
-    const httpClient = { request: vi.fn().mockResolvedValue({ status: 200, data: { code: 200, data: { id: 7 } } }) };
+    const httpClient = { request: vi.fn().mockResolvedValue({ status: 200, data: { code: 200, data: { id: 7, role: 2 } } }) };
     const service = createThumbnailService({ openListBaseUrl: "http://openlist.test", cacheDir: "/tmp/openlist-thumb-test", httpClient });
     const session = await service.createSession("jwt-token", "/Pictures", "folder-password");
 
@@ -29,7 +29,7 @@ describe("thumbnail service helpers", () => {
       url: "http://openlist.test/api/me",
       headers: { Authorization: "jwt-token" },
     }));
-    expect(service.getSession(session.id)).toMatchObject({ userId: 7, authorization: "jwt-token" });
+    expect(service.getSession(session.id)).toMatchObject({ userId: 7, role: 2, authorization: "jwt-token" });
   });
 
   it("pipes a source image stream through Sharp and caches WebP output", async () => {
@@ -37,7 +37,7 @@ describe("thumbnail service helpers", () => {
     const input = await sharp({ create: { width: 800, height: 600, channels: 3, background: "#0f766e" } }).png().toBuffer();
     const httpClient = {
       request: vi.fn()
-        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { id: 7 } } })
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { id: 7, role: 2 } } })
         .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { raw_url: "http://openlist.test/photo.png" } } }),
       get: vi.fn().mockResolvedValue({ status: 200, data: Readable.from(input) }),
     };
@@ -53,9 +53,11 @@ describe("thumbnail service helpers", () => {
       expect(metadata.height).toBe(300);
       expect(httpClient.get).toHaveBeenCalledWith("http://openlist.test/photo.png", expect.objectContaining({
         responseType: "stream",
+        maxRedirects: 5,
         headers: { Authorization: "jwt-token" },
       }));
       expect(service.ffmpegPath).toBe("/usr/bin/ffmpeg");
+      expect(service.maxRedirects).toBe(5);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
     }

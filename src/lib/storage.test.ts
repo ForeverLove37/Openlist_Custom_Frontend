@@ -41,6 +41,8 @@ describe("storage payload helpers", () => {
   it("requires an intentional Local root while defaulting WebDAV to its remote root", () => {
     expect(emptyStorageForm("Local").rootFolderPath).toBe("");
     expect(emptyStorageForm("WebDav").rootFolderPath).toBe("/");
+    expect(emptyStorageForm("WebDav").webProxy).toBe(true);
+    expect(emptyStorageForm("OpenList").webProxy).toBe(false);
   });
 
   it("normalizes mount paths without changing folder names", () => {
@@ -81,10 +83,28 @@ describe("storage payload helpers", () => {
     const storage = storageFromForm(values, existing);
     expect(storage.id).toBe(7);
     expect(storage.order).toBe(5);
+    expect(storage.web_proxy).toBe(true);
     expect(JSON.parse(storage.addition)).toMatchObject({
       address: "https://new.example.com",
       password: "secret",
       future_driver_option: "preserve-me",
+    });
+  });
+
+  it("maps 302 redirect mode and disables range proxying", () => {
+    const values = {
+      ...emptyStorageForm("WebDav"),
+      mountPath: "/Redirected",
+      address: "https://dav.example.com",
+      username: "admin",
+      password: "secret",
+      webProxy: false,
+      proxyRange: true,
+    };
+    expect(storageFromForm(values)).toMatchObject({
+      web_proxy: false,
+      webdav_policy: "302_redirect",
+      proxy_range: false,
     });
   });
 

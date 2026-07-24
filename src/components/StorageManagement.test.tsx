@@ -19,6 +19,7 @@ describe("StorageForm", () => {
     fireEvent.change(screen.getByLabelText(/WebDAV URL/), { target: { value: "https://dav.example.com" } });
     fireEvent.change(screen.getByLabelText(/Username/), { target: { value: "alex" } });
     fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "302 Redirect" }));
     fireEvent.click(screen.getByRole("button", { name: "Add storage" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -29,6 +30,7 @@ describe("StorageForm", () => {
       username: "alex",
       password: "secret",
       rootFolderPath: "/",
+      webProxy: false,
     });
   });
 

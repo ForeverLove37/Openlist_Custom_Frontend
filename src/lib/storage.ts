@@ -69,10 +69,6 @@ const remoteAListAdditionDefaults = {
   forward_archive_requests: true,
 };
 
-function isRemoteDriver(driver: StorageDriver) {
-  return driver === "OpenList" || driver === "AList V3";
-}
-
 function parseAddition(storage?: OpenListStorage): Record<string, unknown> {
   if (!storage?.addition) return {};
   try {
@@ -104,6 +100,8 @@ export function emptyStorageForm(driver: StorageDriver = "Local"): StorageFormVa
     password: "",
     tlsInsecureSkipVerify: false,
     token: "",
+    webProxy: driver === "WebDav",
+    proxyRange: false,
   };
 }
 
@@ -125,13 +123,14 @@ export function storageToForm(storage: OpenListStorage): StorageFormValues {
     password: String(addition.password ?? ""),
     tlsInsecureSkipVerify: Boolean(addition.tls_insecure_skip_verify ?? false),
     token: String(addition.token ?? ""),
+    webProxy: storage.web_proxy,
+    proxyRange: storage.proxy_range,
   };
 }
 
 export function storageFromForm(values: StorageFormValues, existing?: OpenListStorage): OpenListStorage {
   const previousAddition = parseAddition(existing);
   const isLocal = values.driver === "Local";
-  const isRemote = isRemoteDriver(values.driver);
   const addition = isLocal
     ? {
         ...localAdditionDefaults,
@@ -166,8 +165,9 @@ export function storageFromForm(values: StorageFormValues, existing?: OpenListSt
     order: Number.isFinite(values.order) ? values.order : 0,
     driver: values.driver,
     cache_expiration: isLocal ? 0 : (existing?.cache_expiration || 30),
-    web_proxy: isLocal ? false : (existing?.web_proxy ?? (isRemote ? false : true)),
-    webdav_policy: "native_proxy",
+    web_proxy: isLocal ? false : values.webProxy,
+    webdav_policy: !isLocal && !values.webProxy ? "302_redirect" : "native_proxy",
+    proxy_range: !isLocal && values.webProxy && values.proxyRange,
     remark: values.remark.trim(),
     addition: JSON.stringify(addition),
   };

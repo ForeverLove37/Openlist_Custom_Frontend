@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import express from "express";
+import { RemoteStorageError, createRemoteStorageService } from "./remote-storage-service.js";
 import { ThumbnailAccessError, createThumbnailService, fallbackSvg } from "./thumbnail-service.js";
 
 export const THUMBNAIL_SESSION_COOKIE = "openlist_thumb_session";
@@ -17,9 +18,16 @@ function sendEnvelope(response, data = null) {
   response.json({ code: 200, message: "success", data });
 }
 
+export function requireAdminSession(thumbnailService, id) {
+  const session = thumbnailService.getSession(id);
+  if (session.role !== 2) throw new ThumbnailAccessError("Administrator access is required.", 403);
+  return session;
+}
+
 export function createApp({
   distDir = path.resolve("dist"),
   thumbnailService = createThumbnailService(),
+  remoteStorageService = createRemoteStorageService(),
   production = process.env.NODE_ENV === "production",
 } = {}) {
   const app = express();
@@ -34,6 +42,7 @@ export function createApp({
     maxAge: 30 * 60 * 1000,
     path: "/",
   });
+  const adminSession = (request) => requireAdminSession(thumbnailService, sessionId(request));
 
   app.post("/api/custom/session", async (request, response) => {
     try {
@@ -67,6 +76,39 @@ export function createApp({
     thumbnailService.deleteSession(sessionId(request));
     response.clearCookie(THUMBNAIL_SESSION_COOKIE, { path: "/" });
     sendEnvelope(response);
+  });
+
+  app.get("/api/custom/tunnel-auth", (request, response) => {
+    try {
+      const session = adminSession(request);
+      response.set("X-OpenList-Authorization", session.authorization).status(204).send();
+    } catch (error) {
+      const status = error instanceof ThumbnailAccessError ? error.status : 500;
+      response.status(status).send();
+    }
+  });
+
+  app.get("/api/custom/remote-storages/:connectionId", async (request, response) => {
+    try {
+      sendEnvelope(response, await remoteStorageService.list(adminSession(request), request.params.connectionId));
+    } catch (error) {
+      const status = error instanceof ThumbnailAccessError || error instanceof RemoteStorageError ? error.status : 500;
+      response.status(status).json({ code: status, message: error.message || "Could not load remote storages.", data: null });
+    }
+  });
+
+  app.patch("/api/custom/remote-storages/:connectionId/:storageId/transfer", async (request, response) => {
+    try {
+      sendEnvelope(response, await remoteStorageService.updateTransferMode(
+        adminSession(request),
+        request.params.connectionId,
+        request.params.storageId,
+        request.body,
+      ));
+    } catch (error) {
+      const status = error instanceof ThumbnailAccessError || error instanceof RemoteStorageError ? error.status : 500;
+      response.status(status).json({ code: status, message: error.message || "Could not update the remote storage.", data: null });
+    }
   });
 
   app.get("/api/custom/thumb", async (request, response) => {

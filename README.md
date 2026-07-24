@@ -58,6 +58,7 @@ export NODE_ENV=production
 export OPENLIST_API_URL=http://127.0.0.1:5244
 export THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
 export FFMPEG_PATH=/usr/bin/ffmpeg
+export THUMBNAIL_MAX_REDIRECTS=5
 ```
 
 Use a process manager so the service restarts after a reboot. For example, with PM2:
@@ -84,7 +85,17 @@ Check that the service is ready before changing Nginx:
 curl --fail http://127.0.0.1:3000/healthz
 ```
 
-The Nginx templates in `deploy/nginx/` proxy `/api/custom/`, SPA routes, and static assets to the BFF, while `/api/` continues to route to OpenList and download routes continue to proxy directly to OpenList. Install the appropriate template, validate it, and reload:
+Bind the OpenList container only to the loopback interface so its native frontend is not exposed at `SERVER_IP:5244`:
+
+```yaml
+ports:
+  - "127.0.0.1:5244:5244"
+  - "127.0.0.1:5245:5245"
+```
+
+Recreate the container after changing Compose. The Nginx templates in `deploy/nginx/` proxy `/api/custom/`, SPA routes, and static assets to the BFF, while `/api/` continues to route to OpenList. They also provide an admin-only `/legacy-tunnel/` for the iframe-based native management panel. Tunnel authorization uses the short-lived HTTP-only BFF session; Nginx injects the verified admin token into upstream OpenList requests, and the public tunnel-auth endpoint is explicitly blocked.
+
+Install the appropriate template, validate it, and reload:
 
 ```bash
 sudo install -m 0644 deploy/nginx/test.erailab.com.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
@@ -94,4 +105,4 @@ sudo nginx -s reload
 
 Use `test.erailab.com.http.conf` only before the initial TLS certificate exists. It has the same BFF proxy arrangement and retains the Certbot webroot location.
 
-The browser creates a short-lived, HTTP-only thumbnail session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. Folder passwords are retained in memory in the browser and only sent to the same-origin BFF session endpoint when needed for thumbnail access.
+The browser creates a short-lived, HTTP-only BFF session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. The same server-side session authorizes the native management tunnel and nested remote-storage controls for administrator accounts. Remote connection tokens are read from the local OpenList configuration by the BFF and are never returned to the browser.
