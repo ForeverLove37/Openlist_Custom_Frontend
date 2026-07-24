@@ -5,6 +5,8 @@ umask 077
 
 readonly CONFIG_FILE="${OPENLIST_DEPLOY_CONFIG:-/root/.config/openlist-storage-deploy.env}"
 readonly MINIO_ENV_FILE="${MINIO_ENV_FILE:-/root/.config/openlist-minio.env}"
+readonly DOMAIN_INFO_FILE="${OPENLIST_DOMAIN_INFO:-/root/domain_info.txt}"
+readonly CERTBOT_CLOUDFLARE_CREDENTIALS_FILE="${OPENLIST_CERTBOT_CLOUDFLARE_CREDENTIALS:-/root/.config/openlist-certbot-cloudflare.ini}"
 readonly LOG_DIR="${OPENLIST_DEPLOY_LOG_DIR:-/var/log/openlist-storage-deploy}"
 readonly LOG_FILE="${LOG_DIR}/load.log"
 readonly NGINX_CONFIG_FILE="${OPENLIST_NGINX_CONFIG:-/etc/nginx/conf.d/openlist-storage.conf}"
@@ -85,6 +87,12 @@ require_file "$MINIO_ENV_FILE"
 source "$CONFIG_FILE"
 # shellcheck disable=SC1090
 source "$MINIO_ENV_FILE"
+if [[ -e "$DOMAIN_INFO_FILE" ]]; then
+  require_file "$DOMAIN_INFO_FILE"
+  # The domain file may define CF_API_TOKEN and CF_ROOT_DOMAIN. It is root-only.
+  # shellcheck disable=SC1090
+  source "$DOMAIN_INFO_FILE"
+fi
 
 : "${OPENLIST_URL:?OPENLIST_URL is required}"
 : "${OPENLIST_TOKEN:?OPENLIST_TOKEN is required}"
@@ -116,7 +124,9 @@ source "$MINIO_ENV_FILE"
 : "${CLOUDFLARE_RECORD_TTL:=60}"
 : "${CLOUDFLARE_PROXIED:=false}"
 : "${CLOUDFLARE_DNS_WAIT_SECONDS:=90}"
+: "${CLOUDFLARE_DNS_PROPAGATION_SECONDS:=30}"
 : "${FIREWALL_MANAGE:=true}"
+: "${STORAGE_DOMAIN:=}"
 
 S3_ENDPOINT_CONFIGURED="$S3_ENDPOINT"
 WEBDAV_ENDPOINT_CONFIGURED="$WEBDAV_ENDPOINT"
@@ -167,8 +177,8 @@ wait_for_dns() {
 configure_cloudflare_dns() {
   local domain="$1" zone_response zone_id record_response record_id payload response
   [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ROOT_DOMAIN" ]] || return 1
-  [[ "$CLOUDFLARE_PROXIED" == "true" || "$CLOUDFLARE_PROXIED" == "false" ]] || {
-    log ERROR "CLOUDFLARE_PROXIED must be true or false."
+  [[ "$CLOUDFLARE_PROXIED" == "false" ]] || {
+    log ERROR "CLOUDFLARE_PROXIED must be false. WebDAV and S3 require direct DNS-only access."
     return 1
   }
   [[ "$CLOUDFLARE_RECORD_TTL" =~ ^[0-9]+$ ]] || {
@@ -205,37 +215,95 @@ configure_cloudflare_dns() {
   wait_for_dns "$domain"
 }
 
-if PUBLIC_IP="$(resolve_public_ip)"; then
-  log INFO "Resolved public IPv4 address ${PUBLIC_IP}."
-elif [[ -z "$S3_ENDPOINT" || -z "$WEBDAV_ENDPOINT" ]]; then
-  log ERROR "Could not resolve a public IPv4 address for automatic endpoint configuration."
-  exit 1
-else
-  log WARN "Could not resolve the public IPv4 address; using configured endpoints."
-fi
+is_ipv4_address() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
 
-if [[ -z "$S3_ENDPOINT_CONFIGURED" && -z "$WEBDAV_ENDPOINT_CONFIGURED" && "$CLOUDFLARE_AUTO_DNS" == "true" && -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ROOT_DOMAIN" ]]; then
-  if AUTO_PUBLIC_DOMAIN="$(cloudflare_domain)" && configure_cloudflare_dns "$AUTO_PUBLIC_DOMAIN"; then
-    S3_ENDPOINT="https://${AUTO_PUBLIC_DOMAIN}"
-    WEBDAV_ENDPOINT="https://${AUTO_PUBLIC_DOMAIN}${WEBDAV_PROXY_PATH}"
-    log INFO "Using the automatically provisioned HTTPS endpoint ${AUTO_PUBLIC_DOMAIN}."
-  else
-    log WARN "Cloudflare DNS setup failed; falling back to the public IP endpoints."
+is_domain_name() {
+  local domain="$1"
+  [[ ${#domain} -le 253 ]] &&
+    [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] &&
+    ! is_ipv4_address "$domain"
+}
+
+configured_https_domain() {
+  local endpoint="$1" host
+  [[ "$endpoint" =~ ^https:// ]] || return 1
+  host="${endpoint#https://}"
+  host="${host%%/*}"
+  [[ "$host" != *:* ]] || return 1
+  is_domain_name "$host" || return 1
+  printf '%s\n' "${host,,}"
+}
+
+configure_public_domain() {
+  local configured_domain="" webdav_domain=""
+
+  if [[ -n "$S3_ENDPOINT_CONFIGURED" ]]; then
+    configured_domain="$(configured_https_domain "$S3_ENDPOINT_CONFIGURED" || true)"
+    [[ -n "$configured_domain" ]] || log WARN "Ignoring legacy S3_ENDPOINT: only an HTTPS domain is permitted."
   fi
-fi
-S3_ENDPOINT="${S3_ENDPOINT:-http://${PUBLIC_IP}}"
-WEBDAV_ENDPOINT="${WEBDAV_ENDPOINT:-http://${PUBLIC_IP}${WEBDAV_PROXY_PATH}}"
+  if [[ -n "$WEBDAV_ENDPOINT_CONFIGURED" ]]; then
+    webdav_domain="$(configured_https_domain "$WEBDAV_ENDPOINT_CONFIGURED" || true)"
+    [[ -n "$webdav_domain" ]] || log WARN "Ignoring legacy WEBDAV_ENDPOINT: only an HTTPS domain is permitted."
+  fi
+
+  if [[ -z "$STORAGE_DOMAIN" ]]; then
+    STORAGE_DOMAIN="${configured_domain:-$webdav_domain}"
+  fi
+  STORAGE_DOMAIN="${STORAGE_DOMAIN,,}"
+
+  if [[ -n "$configured_domain" && -n "$STORAGE_DOMAIN" && "$configured_domain" != "$STORAGE_DOMAIN" ]]; then
+    log ERROR "S3_ENDPOINT and STORAGE_DOMAIN refer to different hosts. Configure one HTTPS storage domain."
+    return 1
+  fi
+  if [[ -n "$webdav_domain" && -n "$STORAGE_DOMAIN" && "$webdav_domain" != "$STORAGE_DOMAIN" ]]; then
+    log ERROR "WEBDAV_ENDPOINT and STORAGE_DOMAIN refer to different hosts. WebDAV and S3 share one domain."
+    return 1
+  fi
+
+  PUBLIC_IP="$(resolve_public_ip)" || {
+    log ERROR "Could not resolve this host's public IPv4 address for DNS deployment."
+    return 1
+  }
+  log INFO "Resolved public IPv4 address ${PUBLIC_IP}."
+
+  if [[ -z "$STORAGE_DOMAIN" ]]; then
+    [[ "$CLOUDFLARE_AUTO_DNS" == "true" && -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ROOT_DOMAIN" ]] || {
+      log ERROR "STORAGE_DOMAIN is required unless Cloudflare automatic DNS is configured. IP and HTTP endpoints are not supported."
+      return 1
+    }
+    STORAGE_DOMAIN="$(cloudflare_domain)" || return 1
+  fi
+  is_domain_name "$STORAGE_DOMAIN" || {
+    log ERROR "STORAGE_DOMAIN must be a DNS name. IP addresses, ports, and HTTP URLs are not permitted."
+    return 1
+  }
+  [[ "$CLOUDFLARE_DNS_PROPAGATION_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
+    log ERROR "CLOUDFLARE_DNS_PROPAGATION_SECONDS must be a positive number of seconds."
+    return 1
+  }
+
+  if [[ "$CLOUDFLARE_AUTO_DNS" == "true" ]]; then
+    [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ROOT_DOMAIN" ]] || {
+      log ERROR "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ROOT_DOMAIN are required for automatic DNS deployment."
+      return 1
+    }
+    configure_cloudflare_dns "$STORAGE_DOMAIN" || return 1
+  else
+    wait_for_dns "$STORAGE_DOMAIN"
+  fi
+
+  S3_ENDPOINT="https://${STORAGE_DOMAIN}"
+  WEBDAV_ENDPOINT="https://${STORAGE_DOMAIN}${WEBDAV_PROXY_PATH}"
+  PUBLIC_SERVER_NAME="$STORAGE_DOMAIN"
+  log INFO "Public storage endpoints are HTTPS-only at ${PUBLIC_SERVER_NAME}."
+}
 
 [[ "$OPENLIST_URL" =~ ^https?:// ]] || { log ERROR "OPENLIST_URL must use HTTP or HTTPS."; exit 1; }
-[[ "$WEBDAV_ENDPOINT" =~ ^https?:// ]] || { log ERROR "WEBDAV_ENDPOINT must use HTTP or HTTPS."; exit 1; }
-[[ "$S3_ENDPOINT" =~ ^https?:// ]] || { log ERROR "S3_ENDPOINT must use HTTP or HTTPS."; exit 1; }
 [[ "$S3_SIGN_URL_EXPIRE" =~ ^[1-9][0-9]*$ ]] || { log ERROR "S3_SIGN_URL_EXPIRE must be a positive number of hours."; exit 1; }
 [[ "$WEBDAV_PROXY_PATH" =~ ^/[A-Za-z0-9._-]+$ ]] || { log ERROR "WEBDAV_PROXY_PATH must be one URL path segment, such as /webdav."; exit 1; }
-
-PUBLIC_SERVER_NAME="${S3_ENDPOINT#*://}"
-PUBLIC_SERVER_NAME="${PUBLIC_SERVER_NAME%%/*}"
-PUBLIC_SERVER_NAME="${PUBLIC_SERVER_NAME%%:*}"
-[[ -n "$PUBLIC_SERVER_NAME" ]] || { log ERROR "S3_ENDPOINT must include a host name or IP address."; exit 1; }
+configure_public_domain
 
 AUTH_HEADER_FILE="$(mktemp /tmp/openlist-storage-auth.XXXXXX)"
 chmod 0600 "$AUTH_HEADER_FILE"
@@ -411,14 +479,16 @@ has_certificate() {
 ensure_public_firewall() {
   [[ "$FIREWALL_MANAGE" == "true" ]] || return 0
   if command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
-    ufw allow 80/tcp comment 'OpenList storage HTTP proxy' >/dev/null
+    ufw --force delete allow 80/tcp >/dev/null 2>&1 || true
+    ufw --force delete deny 80/tcp >/dev/null 2>&1 || true
+    ufw deny 80/tcp comment 'OpenList storage blocks HTTP' >/dev/null
     ufw allow 443/tcp comment 'OpenList storage HTTPS proxy' >/dev/null
-    log INFO "Allowed the public Nginx HTTP and HTTPS ports through UFW."
+    log INFO "Blocked public HTTP and allowed only the HTTPS Nginx port through UFW."
   elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-    firewall-cmd --permanent --add-service=http >/dev/null
+    firewall-cmd --permanent --remove-service=http >/dev/null || true
     firewall-cmd --permanent --add-service=https >/dev/null
     firewall-cmd --reload >/dev/null
-    log INFO "Allowed the public Nginx HTTP and HTTPS ports through firewalld."
+    log INFO "Blocked public HTTP and allowed only the HTTPS Nginx port through firewalld."
   else
     log INFO "No active host firewall manager was detected."
   fi
@@ -451,28 +521,8 @@ find_free_loopback_port() {
   printf '%s\n' "$candidate"
 }
 
-endpoint_scheme() {
-  printf '%s\n' "${1%%://*}"
-}
-
-endpoint_host() {
-  local endpoint="$1" host
-  host="${endpoint#*://}"
-  host="${host%%/*}"
-  host="${host%%:*}"
-  printf '%s\n' "$host"
-}
-
-requires_certificate() {
-  [[ "$(endpoint_scheme "$S3_ENDPOINT")" == "https" || "$(endpoint_scheme "$WEBDAV_ENDPOINT")" == "https" ]]
-}
-
 assert_certificate_dns() {
   local resolved_addresses
-  [[ ! "$PUBLIC_SERVER_NAME" =~ ^[0-9.]+$ ]] || {
-    log ERROR "A DNS name is required for a Let's Encrypt certificate; update S3_ENDPOINT first."
-    return 1
-  }
   resolved_addresses="$(getent ahostsv4 "$PUBLIC_SERVER_NAME" 2>/dev/null | awk '{print $1}' | sort -u)"
   [[ -n "$resolved_addresses" ]] || {
     log ERROR "${PUBLIC_SERVER_NAME} has no IPv4 DNS record. Create the A record before requesting a certificate."
@@ -483,6 +533,25 @@ assert_certificate_dns() {
     return 1
   }
   log INFO "Verified that ${PUBLIC_SERVER_NAME} resolves to this host."
+}
+
+disable_vendor_http_default() {
+  local vendor_default="/etc/nginx/conf.d/default.conf"
+  [[ -e "$vendor_default" ]] || return 0
+  if grep -qE '^[[:space:]]*listen[[:space:]]+80([[:space:];]|$)' "$vendor_default"; then
+    mv "$vendor_default" "${vendor_default}.disabled-openlist-storage"
+    log INFO "Disabled Nginx's default HTTP virtual host."
+  fi
+}
+
+assert_no_http_listener() {
+  local attempt
+  for attempt in $(seq 1 10); do
+    ss -ltnH 'sport = :80' | grep -q . || return 0
+    sleep 1
+  done
+  log ERROR "TCP port 80 is still listening. Refusing to expose storage over HTTP."
+  return 1
 }
 
 write_proxy_locations() {
@@ -517,15 +586,18 @@ EOF
 configure_nginx() {
   sync_existing_container_ports
   ensure_public_firewall
-  install -d -m 0755 "${NGINX_WEBROOT}/.well-known/acme-challenge"
-  if has_certificate; then
-    cat >"$NGINX_CONFIG_FILE" <<EOF
+  has_certificate || {
+    log ERROR "A TLS certificate is required before Nginx storage routes can be configured."
+    return 1
+  }
+  disable_vendor_http_default
+  cat >"$NGINX_CONFIG_FILE" <<EOF
 server {
-    listen 80;
-    server_name ${PUBLIC_SERVER_NAME};
-    root ${NGINX_WEBROOT};
-    location ^~ /.well-known/acme-challenge/ { try_files \$uri =404; }
-    location / { return 301 https://\$host\$request_uri; }
+    listen 443 ssl http2 default_server;
+    server_name _;
+    ssl_certificate /etc/letsencrypt/live/${CERTBOT_CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERTBOT_CERT_NAME}/privkey.pem;
+    return 444;
 }
 server {
     listen 443 ssl http2;
@@ -533,21 +605,11 @@ server {
     ssl_certificate /etc/letsencrypt/live/${CERTBOT_CERT_NAME}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${CERTBOT_CERT_NAME}/privkey.pem;
 EOF
-    write_proxy_locations >>"$NGINX_CONFIG_FILE"
-    printf '}\n' >>"$NGINX_CONFIG_FILE"
-  else
-    cat >"$NGINX_CONFIG_FILE" <<EOF
-server {
-    listen 80;
-    server_name ${PUBLIC_SERVER_NAME};
-    root ${NGINX_WEBROOT};
-    location ^~ /.well-known/acme-challenge/ { try_files \$uri =404; }
-EOF
-    write_proxy_locations >>"$NGINX_CONFIG_FILE"
-    printf '}\n' >>"$NGINX_CONFIG_FILE"
-  fi
+  write_proxy_locations >>"$NGINX_CONFIG_FILE"
+  printf '}\n' >>"$NGINX_CONFIG_FILE"
   nginx -t
   nginx -s reload
+  assert_no_http_listener
   log INFO "Nginx proxy is configured for ${PUBLIC_SERVER_NAME}."
 }
 
@@ -561,41 +623,45 @@ ensure_minio_bucket() {
 }
 
 issue_certificate() {
-  if ! command -v certbot >/dev/null 2>&1; then
-    log INFO "Installing Certbot for the TLS certificate request."
+  if ! command -v certbot >/dev/null 2>&1 || ! certbot plugins 2>/dev/null | grep -q 'dns-cloudflare'; then
+    log INFO "Installing Certbot and the Cloudflare DNS plugin for the TLS certificate request."
     if command -v apt-get >/dev/null 2>&1; then
       apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
+      DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-confold install -y certbot python3-certbot-dns-cloudflare
     elif command -v dnf >/dev/null 2>&1; then
-      dnf install -y certbot
+      dnf install -y certbot python3-certbot-dns-cloudflare
     elif command -v yum >/dev/null 2>&1; then
-      yum install -y certbot
+      yum install -y certbot python3-certbot-dns-cloudflare
     else
-      log ERROR "Install Certbot, then run this command again."
+      log ERROR "Install Certbot with its Cloudflare DNS plugin, then run this command again."
       exit 1
     fi
   fi
   [[ -n "$CERTBOT_EMAIL" ]] || { log ERROR "CERTBOT_EMAIL is required for the certbot command."; exit 1; }
+  [[ -n "$CLOUDFLARE_API_TOKEN" ]] || { log ERROR "CLOUDFLARE_API_TOKEN is required for HTTPS-only DNS validation."; exit 1; }
   assert_certificate_dns
+  install -d -m 0700 "$(dirname "$CERTBOT_CLOUDFLARE_CREDENTIALS_FILE")"
+  printf 'dns_cloudflare_api_token = %s\n' "$CLOUDFLARE_API_TOKEN" >"$CERTBOT_CLOUDFLARE_CREDENTIALS_FILE"
+  chmod 0600 "$CERTBOT_CLOUDFLARE_CREDENTIALS_FILE"
+  certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$CERTBOT_CLOUDFLARE_CREDENTIALS_FILE" \
+    --dns-cloudflare-propagation-seconds "$CLOUDFLARE_DNS_PROPAGATION_SECONDS" \
+    --non-interactive --agree-tos --email "$CERTBOT_EMAIL" --keep-until-expiring \
+    --cert-name "$CERTBOT_CERT_NAME" -d "$PUBLIC_SERVER_NAME"
   configure_nginx
-  certbot certonly --webroot --non-interactive --agree-tos --email "$CERTBOT_EMAIL" \
-    --cert-name "$CERTBOT_CERT_NAME" -w "$NGINX_WEBROOT" -d "$PUBLIC_SERVER_NAME"
-  configure_nginx
-  log INFO "Certificate deployed for ${PUBLIC_SERVER_NAME}. Update S3_ENDPOINT to https and rerun the relevant deployment command."
+  log INFO "Certificate deployed for the HTTPS-only endpoint ${PUBLIC_SERVER_NAME}."
 }
 
 ensure_certificate() {
-  requires_certificate || return 0
   has_certificate && return
   [[ "$CERTBOT_AUTO_ISSUE" == "true" ]] || {
-    log ERROR "A HTTPS endpoint is configured but the ${CERTBOT_CERT_NAME} certificate is missing. Run /root/load.sh certbot or set CERTBOT_AUTO_ISSUE=true."
+    log ERROR "A TLS certificate is mandatory. Run /root/load.sh certbot or set CERTBOT_AUTO_ISSUE=true."
     return 1
   }
   [[ -n "$CERTBOT_EMAIL" ]] || {
     log ERROR "CERTBOT_EMAIL is required to automatically request the certificate for HTTPS endpoints."
     return 1
   }
-  log INFO "No TLS certificate is installed; requesting one automatically."
+  log INFO "No TLS certificate is installed; requesting one with Cloudflare DNS validation."
   issue_certificate
 }
 
