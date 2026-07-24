@@ -134,6 +134,12 @@ sudo /root/load.sh status
 
 Running `/root/load.sh` with no arguments preserves the original interactive workflow: it offers to format an unused whole disk and mount it at `DATA_DIR`, then lets you choose WebDAV or MinIO and confirm the OpenList mount path. `w` and `m` preserve the original unattended commands and derive `/cloud/<hostname>_<capacity>_WebDav` or `/cloud/<hostname>_<capacity>_S3` when no mount path is supplied.
 
-For TLS, set both public endpoints to the same `https://storage.example.com` hostname (with WebDAV at `/webdav`) and set `CERTBOT_EMAIL`. The deployment validates that the hostname's A record resolves to the current public IP, installs Certbot when necessary, and obtains the certificate automatically. DNS records themselves remain under the control of the domain's DNS provider; point the A record to the host before invoking the script. `sudo /root/load.sh certbot` remains available to renew or request the certificate explicitly.
+For TLS, set both public endpoints to the same `https://storage.example.com` hostname (with WebDAV at `/webdav`) and set `CERTBOT_EMAIL`. The deployment validates that the hostname's A record resolves to the current public IP, installs Certbot when necessary, and obtains the certificate automatically. `sudo /root/load.sh certbot` remains available to renew or request the certificate explicitly.
+
+The helper can also create the DNS record automatically. Leave `S3_ENDPOINT` and `WEBDAV_ENDPOINT` empty, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ROOT_DOMAIN` in the mode-`600` storage configuration, then run a deployment command. It deterministically derives a subdomain, upserts a DNS-only Cloudflare A record, waits until it resolves to the host, and requests the certificate. The Cloudflare token is read through a temporary protected header file and is never stored in the script or sent to Docker.
+
+WebDAV and MinIO share one Nginx host: WebDAV is routed through `WEBDAV_PROXY_PATH` and S3 through `/`. The helper retains the supplied default loopback ports when free, selects an alternative if an unrelated local service occupies one, and keeps the Nginx routes synchronized with the active containers.
+
+When UFW or firewalld is active, the helper allows only ports `80` and `443` for the public Nginx proxy. The container service ports remain loopback-only. Set `FIREWALL_MANAGE=false` only when a separate firewall policy already permits the Nginx ports.
 
 Credentials remain in the mode-`600` environment files and are passed to MinIO with Docker's `--env-file`; they are not embedded in the script. Deployment logs are appended to `/var/log/openlist-storage-deploy/load.log`.

@@ -25,8 +25,10 @@ on_error() {
 trap on_error ERR
 
 AUTH_HEADER_FILE=""
+CLOUDFLARE_HEADER_FILE=""
 cleanup() {
   [[ -z "$AUTH_HEADER_FILE" ]] || rm -f "$AUTH_HEADER_FILE"
+  [[ -z "$CLOUDFLARE_HEADER_FILE" ]] || rm -f "$CLOUDFLARE_HEADER_FILE"
 }
 trap cleanup EXIT
 
@@ -54,23 +56,26 @@ install_dependencies() {
   local missing=()
   command -v curl >/dev/null 2>&1 || missing+=(curl)
   command -v jq >/dev/null 2>&1 || missing+=(jq)
+  command -v nginx >/dev/null 2>&1 || missing+=(nginx)
+  command -v docker >/dev/null 2>&1 || missing+=(docker.io)
   ((${#missing[@]} == 0)) && return
   log INFO "Installing missing deployment dependencies: ${missing[*]}."
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y "${missing[@]}"
+    dnf install -y "${missing[@]/docker.io/docker}"
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y "${missing[@]}"
+    yum install -y "${missing[@]/docker.io/docker}"
   else
     log ERROR "Install curl and jq, then run this command again."
     exit 1
   fi
+  command -v docker >/dev/null 2>&1 && systemctl enable --now docker >/dev/null 2>&1 || true
 }
 
 install_dependencies
-for command_name in curl docker getent jq nginx stat tee lsblk df; do
+for command_name in curl docker getent jq nginx ss stat tee lsblk df; do
   require_command "$command_name"
 done
 require_file "$CONFIG_FILE"
@@ -101,6 +106,20 @@ source "$MINIO_ENV_FILE"
 : "${CERTBOT_EMAIL:=}"
 : "${CERTBOT_CERT_NAME:=openlist-storage}"
 : "${CERTBOT_AUTO_ISSUE:=true}"
+: "${WEBDAV_LISTEN_PORT:=8080}"
+: "${MINIO_API_PORT:=9000}"
+: "${MINIO_CONSOLE_PORT:=9001}"
+: "${CLOUDFLARE_API_TOKEN:=${CF_API_TOKEN:-}}"
+: "${CLOUDFLARE_ROOT_DOMAIN:=${CF_ROOT_DOMAIN:-}}"
+: "${CLOUDFLARE_AUTO_DNS:=true}"
+: "${CLOUDFLARE_SUBDOMAIN_PREFIX:=cloudfs-ser}"
+: "${CLOUDFLARE_RECORD_TTL:=60}"
+: "${CLOUDFLARE_PROXIED:=false}"
+: "${CLOUDFLARE_DNS_WAIT_SECONDS:=90}"
+: "${FIREWALL_MANAGE:=true}"
+
+S3_ENDPOINT_CONFIGURED="$S3_ENDPOINT"
+WEBDAV_ENDPOINT_CONFIGURED="$WEBDAV_ENDPOINT"
 
 resolve_public_ip() {
   local candidate=""
@@ -113,6 +132,79 @@ resolve_public_ip() {
   return 1
 }
 
+cloudflare_domain() {
+  local prefix fingerprint digits node_name
+  prefix="$(printf '%s' "$CLOUDFLARE_SUBDOMAIN_PREFIX" | tr -cd 'a-z0-9-')"
+  node_name="$(hostname -s | tr -cd 'A-Za-z0-9._-')"
+  fingerprint="$(printf '%s' "$PUBLIC_IP" | sha256sum | cut -c1-12)"
+  digits="$(printf '%s' "${PUBLIC_IP}_${node_name}" | sha256sum | tr -dc '0-9' | head -c 10)"
+  while ((${#digits} < 10)); do digits+="0"; done
+  [[ -n "$prefix" && -n "$node_name" ]] || return 1
+  printf '%s%s-%s.%s\n' "$prefix" "$digits" "$fingerprint" "$CLOUDFLARE_ROOT_DOMAIN"
+}
+
+cloudflare_request() {
+  curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 45 \
+    --header "@${CLOUDFLARE_HEADER_FILE}" --header 'Content-Type: application/json' "$@"
+}
+
+wait_for_dns() {
+  local domain="$1" addresses attempt attempts
+  attempts=$((CLOUDFLARE_DNS_WAIT_SECONDS / 5))
+  ((attempts > 0)) || attempts=1
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    addresses="$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | sort -u)"
+    if grep -Fqx "$PUBLIC_IP" <<<"$addresses"; then
+      log INFO "Cloudflare DNS record for ${domain} resolves to ${PUBLIC_IP}."
+      return 0
+    fi
+    sleep 5
+  done
+  log ERROR "Timed out waiting for ${domain} to resolve to ${PUBLIC_IP}."
+  return 1
+}
+
+configure_cloudflare_dns() {
+  local domain="$1" zone_response zone_id record_response record_id payload response
+  [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ROOT_DOMAIN" ]] || return 1
+  [[ "$CLOUDFLARE_PROXIED" == "true" || "$CLOUDFLARE_PROXIED" == "false" ]] || {
+    log ERROR "CLOUDFLARE_PROXIED must be true or false."
+    return 1
+  }
+  [[ "$CLOUDFLARE_RECORD_TTL" =~ ^[0-9]+$ ]] || {
+    log ERROR "CLOUDFLARE_RECORD_TTL must be numeric."
+    return 1
+  }
+
+  CLOUDFLARE_HEADER_FILE="$(mktemp /tmp/openlist-cloudflare-auth.XXXXXX)"
+  chmod 0600 "$CLOUDFLARE_HEADER_FILE"
+  printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN" >"$CLOUDFLARE_HEADER_FILE"
+
+  if ! zone_response="$(cloudflare_request --get --data-urlencode "name=${CLOUDFLARE_ROOT_DOMAIN}" 'https://api.cloudflare.com/client/v4/zones')"; then
+    log ERROR "Could not look up the Cloudflare zone for ${CLOUDFLARE_ROOT_DOMAIN}."
+    return 1
+  fi
+  zone_id="$(jq -r '.result[0].id // empty' <<<"$zone_response")"
+  [[ -n "$zone_id" ]] || { log ERROR "Cloudflare did not return a writable zone for ${CLOUDFLARE_ROOT_DOMAIN}."; return 1; }
+
+  if ! record_response="$(cloudflare_request --get --data-urlencode 'type=A' --data-urlencode "name=${domain}" "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records")"; then
+    log ERROR "Could not look up the Cloudflare DNS record for ${domain}."
+    return 1
+  fi
+  record_id="$(jq -r '.result[0].id // empty' <<<"$record_response")"
+  payload="$(jq -cn --arg name "$domain" --arg content "$PUBLIC_IP" --argjson ttl "$CLOUDFLARE_RECORD_TTL" --argjson proxied "$CLOUDFLARE_PROXIED" '{type:"A",name:$name,content:$content,ttl:$ttl,proxied:$proxied}')"
+
+  if [[ -n "$record_id" ]]; then
+    log INFO "Updating the Cloudflare A record for ${domain}."
+    response="$(cloudflare_request --request PUT --data-binary @- "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" <<<"$payload")" || return 1
+  else
+    log INFO "Creating the Cloudflare A record for ${domain}."
+    response="$(cloudflare_request --request POST --data-binary @- "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" <<<"$payload")" || return 1
+  fi
+  [[ "$(jq -r '.success // false' <<<"$response")" == "true" ]] || { log ERROR "Cloudflare rejected the DNS update."; return 1; }
+  wait_for_dns "$domain"
+}
+
 if PUBLIC_IP="$(resolve_public_ip)"; then
   log INFO "Resolved public IPv4 address ${PUBLIC_IP}."
 elif [[ -z "$S3_ENDPOINT" || -z "$WEBDAV_ENDPOINT" ]]; then
@@ -120,6 +212,16 @@ elif [[ -z "$S3_ENDPOINT" || -z "$WEBDAV_ENDPOINT" ]]; then
   exit 1
 else
   log WARN "Could not resolve the public IPv4 address; using configured endpoints."
+fi
+
+if [[ -z "$S3_ENDPOINT_CONFIGURED" && -z "$WEBDAV_ENDPOINT_CONFIGURED" && "$CLOUDFLARE_AUTO_DNS" == "true" && -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ROOT_DOMAIN" ]]; then
+  if AUTO_PUBLIC_DOMAIN="$(cloudflare_domain)" && configure_cloudflare_dns "$AUTO_PUBLIC_DOMAIN"; then
+    S3_ENDPOINT="https://${AUTO_PUBLIC_DOMAIN}"
+    WEBDAV_ENDPOINT="https://${AUTO_PUBLIC_DOMAIN}${WEBDAV_PROXY_PATH}"
+    log INFO "Using the automatically provisioned HTTPS endpoint ${AUTO_PUBLIC_DOMAIN}."
+  else
+    log WARN "Cloudflare DNS setup failed; falling back to the public IP endpoints."
+  fi
 fi
 S3_ENDPOINT="${S3_ENDPOINT:-http://${PUBLIC_IP}}"
 WEBDAV_ENDPOINT="${WEBDAV_ENDPOINT:-http://${PUBLIC_IP}${WEBDAV_PROXY_PATH}}"
@@ -306,6 +408,49 @@ has_certificate() {
   [[ -f "/etc/letsencrypt/live/${CERTBOT_CERT_NAME}/fullchain.pem" ]] && [[ -f "/etc/letsencrypt/live/${CERTBOT_CERT_NAME}/privkey.pem" ]]
 }
 
+ensure_public_firewall() {
+  [[ "$FIREWALL_MANAGE" == "true" ]] || return 0
+  if command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
+    ufw allow 80/tcp comment 'OpenList storage HTTP proxy' >/dev/null
+    ufw allow 443/tcp comment 'OpenList storage HTTPS proxy' >/dev/null
+    log INFO "Allowed the public Nginx HTTP and HTTPS ports through UFW."
+  elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+    firewall-cmd --permanent --add-service=http >/dev/null
+    firewall-cmd --permanent --add-service=https >/dev/null
+    firewall-cmd --reload >/dev/null
+    log INFO "Allowed the public Nginx HTTP and HTTPS ports through firewalld."
+  else
+    log INFO "No active host firewall manager was detected."
+  fi
+}
+
+container_host_port() {
+  local name="$1" container_port="$2" binding
+  binding="$(docker port "$name" "${container_port}/tcp" 2>/dev/null | head -n 1 || true)"
+  [[ -n "$binding" ]] || return 1
+  printf '%s\n' "${binding##*:}"
+}
+
+sync_existing_container_ports() {
+  local port
+  port="$(container_host_port openlist-webdav 8080 || true)"
+  [[ -z "$port" ]] || WEBDAV_LISTEN_PORT="$port"
+  port="$(container_host_port openlist-minio 9000 || true)"
+  [[ -z "$port" ]] || MINIO_API_PORT="$port"
+  port="$(container_host_port openlist-minio 9001 || true)"
+  [[ -z "$port" ]] || MINIO_CONSOLE_PORT="$port"
+}
+
+find_free_loopback_port() {
+  local candidate="$1" reserved_port="${2:-}"
+  [[ "$candidate" =~ ^[1-9][0-9]{0,4}$ ]] || { log ERROR "Invalid TCP port: ${candidate}"; return 1; }
+  while [[ "$candidate" == "$reserved_port" ]] || ss -ltnH "sport = :${candidate}" | grep -q .; do
+    candidate=$((candidate + 1))
+    ((candidate <= 65535)) || { log ERROR "Could not find a free TCP port."; return 1; }
+  done
+  printf '%s\n' "$candidate"
+}
+
 endpoint_scheme() {
   printf '%s\n' "${1%%://*}"
 }
@@ -354,7 +499,7 @@ write_proxy_locations() {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:${WEBDAV_LISTEN_PORT};
     }
     location / {
         client_max_body_size 0;
@@ -364,12 +509,14 @@ write_proxy_locations() {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_pass http://127.0.0.1:9000;
+        proxy_pass http://127.0.0.1:${MINIO_API_PORT};
     }
 EOF
 }
 
 configure_nginx() {
+  sync_existing_container_ports
+  ensure_public_firewall
   install -d -m 0755 "${NGINX_WEBROOT}/.well-known/acme-challenge"
   if has_certificate; then
     cat >"$NGINX_CONFIG_FILE" <<EOF
@@ -406,9 +553,10 @@ EOF
 
 ensure_minio_bucket() {
   log INFO "Ensuring MinIO bucket ${S3_BUCKET} exists."
-  docker run --rm --network host --env-file "$MINIO_ENV_FILE" --env "S3_BUCKET=${S3_BUCKET}" --entrypoint /bin/sh minio/mc -ec '
-    mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+  docker run --rm --network host --env-file "$MINIO_ENV_FILE" --env "S3_BUCKET=${S3_BUCKET}" --env "MINIO_API_PORT=${MINIO_API_PORT}" --entrypoint /bin/sh minio/mc -ec '
+    mc alias set local "http://127.0.0.1:$MINIO_API_PORT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
     mc mb --ignore-existing "local/$S3_BUCKET" >/dev/null
+    mc ls "local/$S3_BUCKET" >/dev/null
   '
 }
 
@@ -437,7 +585,7 @@ issue_certificate() {
 }
 
 ensure_certificate() {
-  requires_certificate || return
+  requires_certificate || return 0
   has_certificate && return
   [[ "$CERTBOT_AUTO_ISSUE" == "true" ]] || {
     log ERROR "A HTTPS endpoint is configured but the ${CERTBOT_CERT_NAME} certificate is missing. Run /root/load.sh certbot or set CERTBOT_AUTO_ISSUE=true."
@@ -456,12 +604,13 @@ deploy_webdav() {
   log INFO "Deploying the WebDAV container."
   prepare_data_dir
   ensure_certificate
-  configure_nginx
   remove_container openlist-webdav
+  WEBDAV_LISTEN_PORT="$(find_free_loopback_port "$WEBDAV_LISTEN_PORT")"
+  configure_nginx
   docker run --detach \
     --name openlist-webdav \
     --restart always \
-    --publish 127.0.0.1:8080:8080 \
+    --publish "127.0.0.1:${WEBDAV_LISTEN_PORT}:8080" \
     --volume "${DATA_DIR}:/data" \
     rclone/rclone serve webdav /data \
       --addr :8080 \
@@ -482,15 +631,17 @@ deploy_minio() {
   log INFO "Deploying the MinIO container."
   prepare_data_dir
   ensure_certificate
-  configure_nginx
   remove_container openlist-minio
+  MINIO_API_PORT="$(find_free_loopback_port "$MINIO_API_PORT")"
+  MINIO_CONSOLE_PORT="$(find_free_loopback_port "$MINIO_CONSOLE_PORT" "$MINIO_API_PORT")"
+  configure_nginx
   docker run --detach \
     --name openlist-minio \
     --restart always \
     --user 0:0 \
     --env-file "$MINIO_ENV_FILE" \
-    --publish 127.0.0.1:9000:9000 \
-    --publish 127.0.0.1:9001:9001 \
+    --publish "127.0.0.1:${MINIO_API_PORT}:9000" \
+    --publish "127.0.0.1:${MINIO_CONSOLE_PORT}:9001" \
     --volume "${DATA_DIR}:/data" \
     --health-cmd 'curl --fail --silent http://127.0.0.1:9000/minio/health/live || exit 1' \
     --health-interval 30s \
