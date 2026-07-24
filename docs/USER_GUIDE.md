@@ -48,6 +48,8 @@ Select the arrow beside the sort menu to switch between ascending and descending
 
 Use the refresh button to request the latest contents from OpenList.
 
+Select the filter button beside the folder search field to open **Advanced search**. It searches the OpenList index from the selected location and can refine results by name, file kind, modified-date range, size range in MiB, and location. Search results are capped at 100 items, and date filtering requests metadata for those matches. If no results appear after a valid search, ask an administrator to enable or rebuild the OpenList search index.
+
 ## View images
 
 Select an image to open the full-screen gallery. The original-resolution file is requested only when it becomes the active image.
@@ -102,6 +104,8 @@ The **Upload** button appears when your account has upload permission for the cu
 
 Uploads are placed in the folder that was open when the files were selected or dropped, even if you navigate away while they are in progress. Select the close icon on an active upload to cancel it. Completed entries can be dismissed or cleared together.
 
+Use the chevron in the upload manager header to minimize it to a compact progress indicator. Select the chevron again to reopen the detailed queue.
+
 ## Manage files and folders
 
 Rename, copy, move, and delete controls appear only when your account has the corresponding OpenList permission.
@@ -112,6 +116,8 @@ Rename, copy, move, and delete controls appear only when your account has the co
 4. Confirm deletion when prompted. Deletion is permanent.
 
 Rename is available only when one item is selected. Copy and move never overwrite an existing item with the same name; choose a different destination or rename the existing item first.
+
+For one selected file, choose **Copy link** in the selection bar or three-dot menu to copy a fresh direct file link to the clipboard. The link inherits the storage provider's expiry and access policy, so open it again later to obtain a new link when necessary.
 
 ## Unlock a protected folder
 
@@ -159,6 +165,10 @@ The storage list provides these controls:
 - Delete a storage with the trash button. This removes the connection from OpenList but does not delete files at the source.
 
 A **Connected** status means the storage initialized successfully. When a connection fails, its error message appears below the status; correct the connection settings and save again.
+
+## Change language
+
+Administrators can choose **English** or **简体中文** from the **Language** selector at the right of the Settings tabs. The choice is saved in the current browser and applies to the navigation, file actions, upload manager, and advanced search controls.
 
 ## Use native management
 
@@ -210,6 +220,7 @@ The application stores the following information in the browser:
 
 - Your OpenList authentication token
 - Your grid or list layout preference
+- Your language preference
 
 Folder passwords are kept only in the current page's memory. The application does not permanently store them in browser storage.
 

@@ -20,6 +20,7 @@ const photo: OpenListItem = {
 describe("FileBrowser", () => {
   const managementProps = {
     canManage: false,
+    canCopyLink: false,
     selectedNames: new Set<string>(),
     onToggleSelection: vi.fn(),
     onToggleAll: vi.fn(),
@@ -70,5 +71,13 @@ describe("FileBrowser", () => {
     expect(onToggleSelection).toHaveBeenCalledWith(photo);
     expect(onOpenActions).toHaveBeenCalledWith(photo, expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }));
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("offers an action menu for a file when direct-link access is the only action", () => {
+    const { container } = render(
+      <FileBrowser items={[photo]} view="grid" loading={false} directoryPath="/" customThumbnailsEnabled onOpen={vi.fn()} onDownload={vi.fn()} canManage={false} canCopyLink selectedNames={new Set()} onToggleSelection={vi.fn()} onToggleAll={vi.fn()} onOpenActions={vi.fn()} />,
+    );
+    expect(container.querySelector('[title="Actions for mountain.jpg"]')).toBeInTheDocument();
+    expect(container.querySelector('[aria-label="Select mountain.jpg"]')).toBeInTheDocument();
   });
 });

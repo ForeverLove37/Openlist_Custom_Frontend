@@ -32,6 +32,30 @@ export interface FileDetail extends OpenListItem {
   related: OpenListItem[] | null;
 }
 
+export interface SearchResult {
+  parent: string;
+  name: string;
+  is_dir: boolean;
+  size: number;
+  type: number;
+  modified?: string;
+  created?: string;
+}
+
+export interface SearchPage {
+  content: SearchResult[] | null;
+  total: number;
+}
+
+export interface SearchRequest {
+  parent: string;
+  keywords: string;
+  scope: 0 | 1 | 2;
+  page?: number;
+  perPage?: number;
+  password?: string;
+}
+
 export interface OpenListUser {
   id: number;
   username: string;

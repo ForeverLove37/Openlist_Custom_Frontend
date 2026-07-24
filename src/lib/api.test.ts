@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyEntries, createUser, getFile, listStorages, listUsers, moveEntries, removeEntries, renameEntry, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
+import { copyEntries, createUser, getFile, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -132,5 +132,16 @@ describe("OpenList API client", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ dir: "/Team", names: ["old.txt", "draft"] });
     expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toMatchObject({ src_dir: "/Team", dst_dir: "/Archive", names: ["report.txt"], overwrite: false });
     expect(JSON.parse(String(fetchMock.mock.calls[3][1]?.body))).toMatchObject({ src_dir: "/Team", dst_dir: "/Published", names: ["final.txt"], overwrite: false });
+  });
+
+  it("maps advanced search filters to the OpenList search contract", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: 200, message: "success", data: { content: [], total: 0 } }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    await searchFiles({ parent: "/Projects", keywords: "proposal", scope: 2, page: 1, perPage: 100, password: "folder-password" });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/fs/search");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ parent: "/Projects", keywords: "proposal", scope: 2, page: 1, per_page: 100, password: "folder-password" });
   });
 });

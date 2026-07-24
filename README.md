@@ -59,6 +59,7 @@ export OPENLIST_API_URL=http://127.0.0.1:5244
 export THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
 export FFMPEG_PATH=/usr/bin/ffmpeg
 export THUMBNAIL_MAX_REDIRECTS=5
+export THUMBNAIL_VIDEO_SOURCE_MAX_BYTES=268435456
 ```
 
 Use a process manager so the service restarts after a reboot. For example, with PM2:
@@ -107,6 +108,8 @@ Use `test.erailab.com.http.conf` only before the initial TLS certificate exists.
 
 The browser creates a short-lived, HTTP-only BFF session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. The same server-side session authorizes the native management tunnel and nested remote-storage controls for administrator accounts. Remote connection tokens are read from the local OpenList configuration by the BFF and are never returned to the browser.
 
+Video thumbnails are generated from a temporary, bounded local source file instead of a second FFmpeg network request. This allows FFmpeg to read file headers and seek consistently for Local, WebDAV, and redirected storage URLs. The default limit is 256 MiB; increase `THUMBNAIL_VIDEO_SOURCE_MAX_BYTES` only when the service host has sufficient cache disk space.
+
 ## Remote storage deployment helper
 
 `deploy/remote/load.sh` provides repeatable WebDAV and MinIO deployment for a remote storage host. It binds service ports to loopback, sets `restart=always`, adds a MinIO health check, and updates an existing OpenList mount by exact mount path. The S3 payload always uses a positive `sign_url_expire` value so generated download URLs are valid.
@@ -128,5 +131,9 @@ sudo /root/load.sh webdav
 sudo /root/load.sh minio
 sudo /root/load.sh status
 ```
+
+Running `/root/load.sh` with no arguments preserves the original interactive workflow: it offers to format an unused whole disk and mount it at `DATA_DIR`, then lets you choose WebDAV or MinIO and confirm the OpenList mount path. `w` and `m` preserve the original unattended commands and derive `/cloud/<hostname>_<capacity>_WebDav` or `/cloud/<hostname>_<capacity>_S3` when no mount path is supplied.
+
+For TLS, set both public endpoints to the same `https://storage.example.com` hostname (with WebDAV at `/webdav`) and set `CERTBOT_EMAIL`. The deployment validates that the hostname's A record resolves to the current public IP, installs Certbot when necessary, and obtains the certificate automatically. DNS records themselves remain under the control of the domain's DNS provider; point the A record to the host before invoking the script. `sudo /root/load.sh certbot` remains available to renew or request the certificate explicitly.
 
 Credentials remain in the mode-`600` environment files and are passed to MinIO with Docker's `--env-file`; they are not embedded in the script. Deployment logs are appended to `/var/log/openlist-storage-deploy/load.log`.

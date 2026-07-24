@@ -4,7 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
-import { createThumbnailService, fallbackSvg, normalizeOpenListPath, thumbnailCacheKey } from "./thumbnail-service.js";
+import { cacheVideoSource, createThumbnailService, fallbackSvg, normalizeOpenListPath, thumbnailCacheKey } from "./thumbnail-service.js";
 
 describe("thumbnail service helpers", () => {
   it("normalizes safe OpenList paths and rejects traversal", () => {
@@ -66,5 +66,16 @@ describe("thumbnail service helpers", () => {
   it("uses a media-specific SVG fallback", () => {
     expect(fallbackSvg("video")).toContain("VIDEO PREVIEW UNAVAILABLE");
     expect(fallbackSvg("image")).toContain("IMAGE PREVIEW UNAVAILABLE");
+  });
+
+  it("writes a bounded local video source before FFmpeg reads it", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "openlist-thumb-video-source-"));
+    const target = path.join(cacheDir, "source.bin");
+    try {
+      await expect(cacheVideoSource({ data: Readable.from(Buffer.from("video-data")), headers: { "content-length": "10" } }, target, 64)).resolves.toBe(10);
+      await expect(cacheVideoSource({ data: Readable.from(Buffer.alloc(65)), headers: {} }, `${target}.oversize`, 64)).rejects.toThrow("thumbnail limit");
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
   });
 });

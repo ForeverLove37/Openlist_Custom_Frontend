@@ -33,6 +33,11 @@ describe("file operations", () => {
     expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 
+  it("shows Copy link only for one selected file", () => {
+    render(<FileSelectionBar count={1} permissions={{ rename: false, copy: false, move: false, delete: false, copyLink: true }} canCopyLink onAction={vi.fn()} onClear={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /copy link/i })).toBeInTheDocument();
+  });
+
   it("rejects path separators before submitting a rename", () => {
     const onSubmit = vi.fn();
     render(<RenameDialog item={folder} busy={false} error="" onClose={vi.fn()} onSubmit={onSubmit} />);

@@ -19,9 +19,12 @@ import {
   Search,
   Settings2,
   ShieldAlert,
+  SlidersHorizontal,
   Upload,
   X,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { AdvancedSearch } from "./components/AdvancedSearch";
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
 import {
@@ -34,6 +37,7 @@ import {
   type FileOperationPermissions,
 } from "./components/FileOperations";
 import { Gallery } from "./components/Gallery";
+import { LanguageSelector } from "./components/LanguageSelector";
 import { NativeManagement } from "./components/NativeManagement";
 import { StorageManagement } from "./components/StorageManagement";
 import { UserManagement } from "./components/UserManagement";
@@ -82,7 +86,25 @@ function isAdminView(view: AppView) {
   return view === "storages" || view === "users" || view === "native";
 }
 
+async function copyToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.appendChild(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("The browser blocked access to the clipboard.");
+}
+
 export default function App() {
+  const { t } = useTranslation();
   const [appView, setAppView] = useState<AppView>(viewFromLocation);
   const [currentPath, setCurrentPath] = useState(() => directoryPathFromLocation(window.location.pathname));
   const [passwords, setPasswords] = useState<Record<string, string>>({});
@@ -111,6 +133,7 @@ export default function App() {
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [operationBusy, setOperationBusy] = useState(false);
   const [operationError, setOperationError] = useState("");
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadControllers = useRef(new Map<string, AbortController>());
   const uploadSequence = useRef(0);
@@ -177,6 +200,7 @@ export default function App() {
     setAppView("files");
     setCurrentPath(normalized);
     setQuery("");
+    setAdvancedSearchOpen(false);
     setSidebarOpen(false);
   }, []);
 
@@ -256,8 +280,10 @@ export default function App() {
     move: Boolean(data.write && hasFilePermission(5)),
     copy: hasFilePermission(6),
     delete: Boolean(data.write && hasFilePermission(7)),
-  }), [data.write, hasFilePermission]);
-  const canManageFiles = Object.values(filePermissions).some(Boolean);
+    copyLink: Boolean(data.content),
+  }), [data.content, data.write, hasFilePermission]);
+  const canManageFiles = filePermissions.rename || filePermissions.copy || filePermissions.move || filePermissions.delete;
+  const selectableItems = useMemo(() => items.filter((item) => canManageFiles || (filePermissions.copyLink && !item.is_dir)), [canManageFiles, filePermissions.copyLink, items]);
   const selectedItems = useMemo(() => (data.content ?? []).filter((item) => selectedNames.has(item.name)), [data.content, selectedNames]);
 
   const toggleSelection = useCallback((item: OpenListItem) => {
@@ -272,23 +298,45 @@ export default function App() {
   const toggleAll = useCallback(() => {
     setSelectedNames((current) => {
       const next = new Set(current);
-      const allSelected = items.length > 0 && items.every((item) => next.has(item.name));
-      for (const item of items) {
+      const allSelected = selectableItems.length > 0 && selectableItems.every((item) => next.has(item.name));
+      for (const item of selectableItems) {
         if (allSelected) next.delete(item.name);
         else next.add(item.name);
       }
       return next;
     });
-  }, [items]);
+  }, [selectableItems]);
   const openFileActions = useCallback((item: OpenListItem, point: { x: number; y: number }) => {
     setSelectedNames((current) => current.has(item.name) ? current : new Set([item.name]));
     setActionMenu(point);
   }, []);
+  const copyDirectLink = useCallback(async () => {
+    const item = selectedItems[0];
+    if (!item || item.is_dir || selectedItems.length !== 1) return;
+    setOperationBusy(true);
+    try {
+      const detail = await getFile(joinPath(currentPath, item.name), passwords[currentPath] ?? "");
+      if (!detail.raw_url) throw new Error("OpenList did not return a direct file link.");
+      await copyToClipboard(detail.raw_url);
+      setSelectedNames(new Set());
+      setNoticeTone("success");
+      setNotice(t("files.linkCopied"));
+    } catch (reason) {
+      setNoticeTone("error");
+      setNotice(reason instanceof ApiError ? reason.message : reason instanceof Error ? reason.message : "Could not copy the direct link.");
+    } finally {
+      setOperationBusy(false);
+    }
+  }, [currentPath, passwords, selectedItems, t]);
   const beginFileOperation = useCallback((operation: FileOperation) => {
     setActionMenu(null);
     setOperationError("");
+    if (operation === "copyLink") {
+      void copyDirectLink();
+      return;
+    }
     setFileOperation(operation);
-  }, []);
+  }, [copyDirectLink]);
   const closeFileOperation = useCallback(() => {
     if (operationBusy) return;
     setFileOperation(null);
@@ -416,7 +464,7 @@ export default function App() {
   };
 
   const breadcrumbParts = currentPath.split("/").filter(Boolean);
-  const currentName = breadcrumbParts.at(-1) ?? "My files";
+  const currentName = breadcrumbParts.at(-1) ?? t("nav.files");
   const isSignedIn = Boolean(getToken());
 
   return (
@@ -433,8 +481,8 @@ export default function App() {
           <button className="icon-button sidebar__close" onClick={() => setSidebarOpen(false)} title="Close navigation"><X size={20} /></button>
         </div>
         <nav className="sidebar__nav" aria-label="Main navigation">
-          <button className={`nav-item${appView === "files" ? " nav-item--active" : ""}`} onClick={() => navigate("/")}><HardDrive size={20} /><span>My files</span></button>
-          {user?.role === ADMIN_ROLE && <button className={`nav-item${isAdminView(appView) ? " nav-item--active" : ""}`} onClick={() => navigateToAdmin("storages")}><Settings2 size={20} /><span>Settings</span></button>}
+          <button className={`nav-item${appView === "files" ? " nav-item--active" : ""}`} onClick={() => navigate("/")}><HardDrive size={20} /><span>{t("nav.files")}</span></button>
+          {user?.role === ADMIN_ROLE && <button className={`nav-item${isAdminView(appView) ? " nav-item--active" : ""}`} onClick={() => navigateToAdmin("storages")}><Settings2 size={20} /><span>{t("nav.settings")}</span></button>}
         </nav>
         <div className="storage-summary">
           <div className="storage-summary__title"><Cloud size={18} /><strong>OpenList storage</strong></div>
@@ -451,23 +499,26 @@ export default function App() {
           {appView === "files" ? (
             <>
               <nav className="breadcrumbs" aria-label="Breadcrumb">
-                <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
+                <button onClick={() => navigate("/")} title={t("nav.files")}><HardDrive size={19} /><span>{t("nav.files")}</span></button>
                 {breadcrumbParts.map((part, index) => {
                   const path = `/${breadcrumbParts.slice(0, index + 1).join("/")}`;
                   return <span className="breadcrumb-part" key={path}><ChevronRight size={17} /><button onClick={() => navigate(path)}>{part}</button></span>;
                 })}
               </nav>
-              <label className="search-box">
-                <Search size={19} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search in ${currentName}`} aria-label="Search current folder" />
-                {query && <button onClick={() => setQuery("")} title="Clear search"><X size={17} /></button>}
-              </label>
+              <div className="search-actions">
+                <label className="search-box">
+                  <Search size={19} />
+                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("files.searchCurrent", { name: currentName })} aria-label={t("files.searchCurrent", { name: currentName })} />
+                  {query && <button onClick={() => setQuery("")} title={t("common.clear")}><X size={17} /></button>}
+                </label>
+                <button className="icon-button bordered-button" onClick={() => setAdvancedSearchOpen(true)} title={t("files.advancedSearch")}><SlidersHorizontal size={18} /></button>
+              </div>
             </>
           ) : (
             <nav className="breadcrumbs" aria-label="Breadcrumb">
-              <button onClick={() => navigate("/")} title="My files"><HardDrive size={19} /><span>My files</span></button>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>Settings</button></span>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? "Users" : appView === "native" ? "Native Management" : "Storage"}</button></span>
+              <button onClick={() => navigate("/")} title={t("nav.files")}><HardDrive size={19} /><span>{t("nav.files")}</span></button>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>{t("nav.settings")}</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "native" ? t("settings.native") : t("settings.storage")}</button></span>
             </nav>
           )}
         </div>
@@ -479,7 +530,7 @@ export default function App() {
               <p>{loading ? "Loading files" : `${data.total} ${data.total === 1 ? "item" : "items"}`}{data.provider && data.provider !== "unknown" ? ` · ${data.provider}` : ""}</p>
             </div>
             <div className="browser-actions">
-              {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => fileInputRef.current?.click()}><Upload size={17} /> Upload</button></>}
+              {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => fileInputRef.current?.click()}><Upload size={17} /> {t("common.upload")}</button></>}
               <button className="icon-button bordered-button" onClick={refresh} disabled={loading} title="Refresh folder"><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
               <label className="sort-select" title="Sort files">
                 <ArrowDownAZ size={18} />
@@ -502,7 +553,7 @@ export default function App() {
 
           {data.header && !loading && <div className="folder-note">{data.header}</div>}
 
-          <FileSelectionBar count={selectedItems.length} permissions={filePermissions} onAction={beginFileOperation} onClear={() => { setSelectedNames(new Set()); setActionMenu(null); }} />
+          <FileSelectionBar count={selectedItems.length} permissions={filePermissions} canCopyLink={selectedItems.length === 1 && !selectedItems[0]?.is_dir} onAction={beginFileOperation} onClear={() => { setSelectedNames(new Set()); setActionMenu(null); }} />
 
           {error ? (
             <ErrorState error={error} onRetry={refresh} onLogin={() => setLoginOpen(true)} onPassword={() => setPasswordOpen(true)} />
@@ -523,6 +574,7 @@ export default function App() {
               onOpen={openItem}
               onDownload={downloadItem}
               canManage={canManageFiles}
+              canCopyLink={Boolean(filePermissions.copyLink)}
               selectedNames={selectedNames}
               onToggleSelection={toggleSelection}
               onToggleAll={toggleAll}
@@ -548,10 +600,11 @@ export default function App() {
 
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
       {video && <VideoModal {...video} onClose={() => setVideo(null)} />}
+      {advancedSearchOpen && <AdvancedSearch initialLocation={currentPath} passwordForPath={(path) => passwords[path] ?? ""} onClose={() => setAdvancedSearchOpen(false)} onNavigate={navigate} />}
       {mediaLoading && <div className="media-loading" role="status"><LoaderCircle className="spin" size={21} /><span>Preparing {mediaLoading}</span></div>}
       {notice && <div className={`toast${noticeTone === "success" ? " toast--success" : ""}${uploads.length ? " toast--with-uploads" : ""}`} role={noticeTone === "error" ? "alert" : "status"}>{noticeTone === "success" ? <CheckCircle2 size={19} /> : <ShieldAlert size={19} />}<span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
       <UploadQueue uploads={uploads} onCancel={cancelUpload} onDismiss={dismissUpload} onClearCompleted={clearCompletedUploads} />
-      {actionMenu && selectedItems.length > 0 && <FileActionMenu point={actionMenu} count={selectedItems.length} permissions={filePermissions} onAction={beginFileOperation} onClose={() => setActionMenu(null)} />}
+      {actionMenu && selectedItems.length > 0 && <FileActionMenu point={actionMenu} count={selectedItems.length} permissions={filePermissions} canCopyLink={selectedItems.length === 1 && !selectedItems[0]?.is_dir} onAction={beginFileOperation} onClose={() => setActionMenu(null)} />}
       {fileOperation === "rename" && selectedItems.length === 1 && <RenameDialog item={selectedItems[0]} busy={operationBusy} error={operationError} onClose={closeFileOperation} onSubmit={(name) => void runFileOperation("rename", name)} />}
       {fileOperation === "delete" && selectedItems.length > 0 && <DeleteDialog items={selectedItems} busy={operationBusy} error={operationError} onClose={closeFileOperation} onConfirm={() => void runFileOperation("delete")} />}
       {(fileOperation === "copy" || fileOperation === "move") && selectedItems.length > 0 && <FolderPickerDialog operation={fileOperation} sourcePath={currentPath} items={selectedItems} passwords={passwords} busy={operationBusy} operationError={operationError} onClose={closeFileOperation} onConfirm={(destination) => void runFileOperation(fileOperation, destination)} />}
@@ -624,6 +677,7 @@ function AdminStorageGate({
   onSelectView: (view: Exclude<AppView, "files">) => void;
   thumbnailSessionReady: boolean;
 }) {
+  const { t } = useTranslation();
   if (!resolved) {
     return <div className="admin-gate" role="status"><LoaderCircle className="spin" size={28} /><span>Checking administrator access</span></div>;
   }
@@ -646,5 +700,5 @@ function AdminStorageGate({
       </div>
     );
   }
-  return <><nav className="admin-tabs" aria-label="Settings sections"><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>Storage</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>Users</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>Native Management</button></nav>{view === "users" ? <UserManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
+  return <><nav className="admin-tabs" aria-label={t("nav.settings")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button><LanguageSelector /></nav>{view === "users" ? <UserManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
 }

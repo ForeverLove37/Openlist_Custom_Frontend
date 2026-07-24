@@ -5,6 +5,7 @@ import {
   Copy,
   Folder,
   FolderInput,
+  Link2,
   LoaderCircle,
   Pencil,
   Trash2,
@@ -14,23 +15,25 @@ import { ApiError, listDirectory } from "../lib/api";
 import { destinationError, joinPath } from "../lib/files";
 import type { OpenListItem } from "../lib/types";
 
-export type FileOperation = "rename" | "copy" | "move" | "delete";
+export type FileOperation = "rename" | "copy" | "move" | "delete" | "copyLink";
 
 export interface FileOperationPermissions {
   rename: boolean;
   copy: boolean;
   move: boolean;
   delete: boolean;
+  copyLink?: boolean;
 }
 
 interface SelectionBarProps {
   count: number;
   permissions: FileOperationPermissions;
+  canCopyLink?: boolean;
   onAction: (operation: FileOperation) => void;
   onClear: () => void;
 }
 
-export function FileSelectionBar({ count, permissions, onAction, onClear }: SelectionBarProps) {
+export function FileSelectionBar({ count, permissions, canCopyLink = false, onAction, onClear }: SelectionBarProps) {
   if (count === 0) return null;
   return (
     <div className="file-selection-bar" role="toolbar" aria-label="Selected file actions">
@@ -39,6 +42,7 @@ export function FileSelectionBar({ count, permissions, onAction, onClear }: Sele
         {permissions.rename && count === 1 && <button onClick={() => onAction("rename")}><Pencil size={16} /> Rename</button>}
         {permissions.copy && <button onClick={() => onAction("copy")}><Copy size={16} /> Copy</button>}
         {permissions.move && <button onClick={() => onAction("move")}><FolderInput size={16} /> Move</button>}
+        {permissions.copyLink && canCopyLink && <button onClick={() => onAction("copyLink")}><Link2 size={16} /> Copy link</button>}
         {permissions.delete && <button className="file-selection-bar__danger" onClick={() => onAction("delete")}><Trash2 size={16} /> Delete</button>}
         <button className="file-selection-bar__clear" onClick={onClear} title="Clear selection"><X size={17} /><span className="sr-only">Clear selection</span></button>
       </div>
@@ -50,11 +54,12 @@ interface ActionMenuProps {
   point: { x: number; y: number };
   count: number;
   permissions: FileOperationPermissions;
+  canCopyLink?: boolean;
   onAction: (operation: FileOperation) => void;
   onClose: () => void;
 }
 
-export function FileActionMenu({ point, count, permissions, onAction, onClose }: ActionMenuProps) {
+export function FileActionMenu({ point, count, permissions, canCopyLink = false, onAction, onClose }: ActionMenuProps) {
   useEscape(onClose);
   useEffect(() => {
     const close = () => onClose();
@@ -66,7 +71,7 @@ export function FileActionMenu({ point, count, permissions, onAction, onClose }:
     };
   }, [onClose]);
   const left = Math.max(8, Math.min(point.x, window.innerWidth - 190));
-  const top = Math.max(8, Math.min(point.y, window.innerHeight - 210));
+  const top = Math.max(8, Math.min(point.y, window.innerHeight - 250));
   const action = (operation: FileOperation) => { onClose(); onAction(operation); };
   return (
     <div className="file-menu-backdrop" role="presentation" onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }}>
@@ -74,6 +79,7 @@ export function FileActionMenu({ point, count, permissions, onAction, onClose }:
         {permissions.rename && count === 1 && <button role="menuitem" onClick={() => action("rename")}><Pencil size={16} /> Rename</button>}
         {permissions.copy && <button role="menuitem" onClick={() => action("copy")}><Copy size={16} /> Copy {count > 1 ? `${count} items` : ""}</button>}
         {permissions.move && <button role="menuitem" onClick={() => action("move")}><FolderInput size={16} /> Move {count > 1 ? `${count} items` : ""}</button>}
+        {permissions.copyLink && canCopyLink && <button role="menuitem" onClick={() => action("copyLink")}><Link2 size={16} /> Copy link</button>}
         {permissions.delete && <button className="danger-button" role="menuitem" onClick={() => action("delete")}><Trash2 size={16} /> Delete {count > 1 ? `${count} items` : ""}</button>}
       </div>
     </div>

@@ -7,6 +7,7 @@ readonly CONFIG_FILE="${OPENLIST_DEPLOY_CONFIG:-/root/.config/openlist-storage-d
 readonly MINIO_ENV_FILE="${MINIO_ENV_FILE:-/root/.config/openlist-minio.env}"
 readonly LOG_DIR="${OPENLIST_DEPLOY_LOG_DIR:-/var/log/openlist-storage-deploy}"
 readonly LOG_FILE="${LOG_DIR}/load.log"
+readonly NGINX_CONFIG_FILE="${OPENLIST_NGINX_CONFIG:-/etc/nginx/conf.d/openlist-storage.conf}"
 
 mkdir -p "$LOG_DIR"
 chmod 0750 "$LOG_DIR"
@@ -49,7 +50,27 @@ require_file() {
   }
 }
 
-for command_name in curl docker jq stat tee; do
+install_dependencies() {
+  local missing=()
+  command -v curl >/dev/null 2>&1 || missing+=(curl)
+  command -v jq >/dev/null 2>&1 || missing+=(jq)
+  ((${#missing[@]} == 0)) && return
+  log INFO "Installing missing deployment dependencies: ${missing[*]}."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y "${missing[@]}"
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y "${missing[@]}"
+  else
+    log ERROR "Install curl and jq, then run this command again."
+    exit 1
+  fi
+}
+
+install_dependencies
+for command_name in curl docker getent jq nginx stat tee lsblk df; do
   require_command "$command_name"
 done
 require_file "$CONFIG_FILE"
@@ -65,20 +86,54 @@ source "$MINIO_ENV_FILE"
 : "${DATA_DIR:=/opt/openlist_file}"
 : "${WEBDAV_USER:?WEBDAV_USER is required}"
 : "${WEBDAV_PASSWORD:?WEBDAV_PASSWORD is required}"
-: "${WEBDAV_ENDPOINT:?WEBDAV_ENDPOINT is required}"
-: "${WEBDAV_MOUNT_PATH:?WEBDAV_MOUNT_PATH is required}"
+: "${WEBDAV_ENDPOINT:=}"
+: "${WEBDAV_MOUNT_PATH:=}"
 : "${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}"
 : "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}"
-: "${S3_ENDPOINT:?S3_ENDPOINT is required}"
-: "${S3_MOUNT_PATH:?S3_MOUNT_PATH is required}"
+: "${S3_ENDPOINT:=}"
+: "${S3_MOUNT_PATH:=}"
 : "${S3_BUCKET:=default}"
 : "${S3_REGION:=openlist}"
 : "${S3_SIGN_URL_EXPIRE:=4}"
+: "${PUBLIC_IP:=}"
+: "${NGINX_WEBROOT:=/var/www/openlist-storage}"
+: "${WEBDAV_PROXY_PATH:=/webdav}"
+: "${CERTBOT_EMAIL:=}"
+: "${CERTBOT_CERT_NAME:=openlist-storage}"
+: "${CERTBOT_AUTO_ISSUE:=true}"
+
+resolve_public_ip() {
+  local candidate=""
+  local service
+  [[ -n "$PUBLIC_IP" ]] && { printf '%s\n' "$PUBLIC_IP"; return; }
+  for service in "https://ifconfig.me/ip" "https://api.ipify.org" "https://ip.sb" "https://icanhazip.com"; do
+    candidate="$(curl --silent --show-error --max-time 5 "$service" 2>/dev/null | tr -d '[:space:]')" || true
+    [[ "$candidate" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { printf '%s\n' "$candidate"; return; }
+  done
+  return 1
+}
+
+if PUBLIC_IP="$(resolve_public_ip)"; then
+  log INFO "Resolved public IPv4 address ${PUBLIC_IP}."
+elif [[ -z "$S3_ENDPOINT" || -z "$WEBDAV_ENDPOINT" ]]; then
+  log ERROR "Could not resolve a public IPv4 address for automatic endpoint configuration."
+  exit 1
+else
+  log WARN "Could not resolve the public IPv4 address; using configured endpoints."
+fi
+S3_ENDPOINT="${S3_ENDPOINT:-http://${PUBLIC_IP}}"
+WEBDAV_ENDPOINT="${WEBDAV_ENDPOINT:-http://${PUBLIC_IP}${WEBDAV_PROXY_PATH}}"
 
 [[ "$OPENLIST_URL" =~ ^https?:// ]] || { log ERROR "OPENLIST_URL must use HTTP or HTTPS."; exit 1; }
 [[ "$WEBDAV_ENDPOINT" =~ ^https?:// ]] || { log ERROR "WEBDAV_ENDPOINT must use HTTP or HTTPS."; exit 1; }
 [[ "$S3_ENDPOINT" =~ ^https?:// ]] || { log ERROR "S3_ENDPOINT must use HTTP or HTTPS."; exit 1; }
 [[ "$S3_SIGN_URL_EXPIRE" =~ ^[1-9][0-9]*$ ]] || { log ERROR "S3_SIGN_URL_EXPIRE must be a positive number of hours."; exit 1; }
+[[ "$WEBDAV_PROXY_PATH" =~ ^/[A-Za-z0-9._-]+$ ]] || { log ERROR "WEBDAV_PROXY_PATH must be one URL path segment, such as /webdav."; exit 1; }
+
+PUBLIC_SERVER_NAME="${S3_ENDPOINT#*://}"
+PUBLIC_SERVER_NAME="${PUBLIC_SERVER_NAME%%/*}"
+PUBLIC_SERVER_NAME="${PUBLIC_SERVER_NAME%%:*}"
+[[ -n "$PUBLIC_SERVER_NAME" ]] || { log ERROR "S3_ENDPOINT must include a host name or IP address."; exit 1; }
 
 AUTH_HEADER_FILE="$(mktemp /tmp/openlist-storage-auth.XXXXXX)"
 chmod 0600 "$AUTH_HEADER_FILE"
@@ -205,10 +260,203 @@ prepare_data_dir() {
   chmod 0750 "$DATA_DIR"
 }
 
+storage_size() {
+  df -hP "$DATA_DIR" | awk 'NR == 2 { print $2 }'
+}
+
+default_mount_path() {
+  local driver_label="$1"
+  local node_name capacity
+  node_name="$(hostname -s | tr -cd 'A-Za-z0-9._-')"
+  capacity="$(storage_size)"
+  [[ -n "$node_name" && -n "$capacity" ]] || { log ERROR "Could not derive the default storage mount path."; return 1; }
+  printf '/cloud/%s_%s_%s\n' "$node_name" "$capacity" "$driver_label"
+}
+
+check_and_mount_disk() {
+  local disk selected mount_points child_partitions uuid
+  local candidates=()
+  log INFO "Scanning for unused whole disks that can be mounted at ${DATA_DIR}."
+  while read -r disk; do
+    [[ -n "$disk" ]] || continue
+    mount_points="$(lsblk -nrpo MOUNTPOINT "/dev/${disk}" | awk 'NF' || true)"
+    child_partitions="$(lsblk -nlo TYPE "/dev/${disk}" | grep -x part || true)"
+    [[ -z "$mount_points" && -z "$child_partitions" ]] && candidates+=("$disk")
+  done < <(lsblk -nd -o NAME,TYPE | awk '$2 == "disk" { print $1 }')
+
+  if ((${#candidates[@]} == 0)); then
+    log INFO "No unused whole disks were found; ${DATA_DIR} will remain on its current filesystem."
+    return
+  fi
+  printf 'Unused whole disks: %s\n' "${candidates[*]}" >&2
+  read -r -p "Format and mount one at ${DATA_DIR}? [y/N]: " selected </dev/tty
+  [[ "$selected" =~ ^[Yy]$ ]] || { log INFO "Disk formatting was skipped."; return; }
+  read -r -p "Disk name to use (for example vdb): " selected </dev/tty
+  [[ " ${candidates[*]} " == *" ${selected} "* ]] || { log ERROR "${selected} is not an unused whole disk."; return 1; }
+  log WARN "Formatting /dev/${selected} as ext4 after interactive confirmation."
+  mkfs.ext4 -F "/dev/${selected}"
+  install -d -m 0750 "$DATA_DIR"
+  mount "/dev/${selected}" "$DATA_DIR"
+  uuid="$(blkid -s UUID -o value "/dev/${selected}")"
+  grep -q "UUID=${uuid}[[:space:]]\+${DATA_DIR}[[:space:]]" /etc/fstab || printf 'UUID=%s %s ext4 defaults,nofail 0 2\n' "$uuid" "$DATA_DIR" >>/etc/fstab
+  log INFO "Mounted /dev/${selected} at ${DATA_DIR} and recorded it in /etc/fstab."
+}
+
+has_certificate() {
+  [[ -f "/etc/letsencrypt/live/${CERTBOT_CERT_NAME}/fullchain.pem" ]] && [[ -f "/etc/letsencrypt/live/${CERTBOT_CERT_NAME}/privkey.pem" ]]
+}
+
+endpoint_scheme() {
+  printf '%s\n' "${1%%://*}"
+}
+
+endpoint_host() {
+  local endpoint="$1" host
+  host="${endpoint#*://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
+  printf '%s\n' "$host"
+}
+
+requires_certificate() {
+  [[ "$(endpoint_scheme "$S3_ENDPOINT")" == "https" || "$(endpoint_scheme "$WEBDAV_ENDPOINT")" == "https" ]]
+}
+
+assert_certificate_dns() {
+  local resolved_addresses
+  [[ ! "$PUBLIC_SERVER_NAME" =~ ^[0-9.]+$ ]] || {
+    log ERROR "A DNS name is required for a Let's Encrypt certificate; update S3_ENDPOINT first."
+    return 1
+  }
+  resolved_addresses="$(getent ahostsv4 "$PUBLIC_SERVER_NAME" 2>/dev/null | awk '{print $1}' | sort -u)"
+  [[ -n "$resolved_addresses" ]] || {
+    log ERROR "${PUBLIC_SERVER_NAME} has no IPv4 DNS record. Create the A record before requesting a certificate."
+    return 1
+  }
+  [[ -z "$PUBLIC_IP" || $'\n'"$resolved_addresses"$'\n' == *$'\n'"$PUBLIC_IP"$'\n'* ]] || {
+    log ERROR "${PUBLIC_SERVER_NAME} resolves to ${resolved_addresses//$'\n'/, }, not this host (${PUBLIC_IP})."
+    return 1
+  }
+  log INFO "Verified that ${PUBLIC_SERVER_NAME} resolves to this host."
+}
+
+write_proxy_locations() {
+  cat <<EOF
+    location = ${WEBDAV_PROXY_PATH} {
+        return 301 ${WEBDAV_PROXY_PATH}/;
+    }
+    location ^~ ${WEBDAV_PROXY_PATH}/ {
+        rewrite ^${WEBDAV_PROXY_PATH}/(.*)$ /\$1 break;
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_pass http://127.0.0.1:8080;
+    }
+    location / {
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_pass http://127.0.0.1:9000;
+    }
+EOF
+}
+
+configure_nginx() {
+  install -d -m 0755 "${NGINX_WEBROOT}/.well-known/acme-challenge"
+  if has_certificate; then
+    cat >"$NGINX_CONFIG_FILE" <<EOF
+server {
+    listen 80;
+    server_name ${PUBLIC_SERVER_NAME};
+    root ${NGINX_WEBROOT};
+    location ^~ /.well-known/acme-challenge/ { try_files \$uri =404; }
+    location / { return 301 https://\$host\$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    server_name ${PUBLIC_SERVER_NAME};
+    ssl_certificate /etc/letsencrypt/live/${CERTBOT_CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERTBOT_CERT_NAME}/privkey.pem;
+EOF
+    write_proxy_locations >>"$NGINX_CONFIG_FILE"
+    printf '}\n' >>"$NGINX_CONFIG_FILE"
+  else
+    cat >"$NGINX_CONFIG_FILE" <<EOF
+server {
+    listen 80;
+    server_name ${PUBLIC_SERVER_NAME};
+    root ${NGINX_WEBROOT};
+    location ^~ /.well-known/acme-challenge/ { try_files \$uri =404; }
+EOF
+    write_proxy_locations >>"$NGINX_CONFIG_FILE"
+    printf '}\n' >>"$NGINX_CONFIG_FILE"
+  fi
+  nginx -t
+  nginx -s reload
+  log INFO "Nginx proxy is configured for ${PUBLIC_SERVER_NAME}."
+}
+
+ensure_minio_bucket() {
+  log INFO "Ensuring MinIO bucket ${S3_BUCKET} exists."
+  docker run --rm --network host --env-file "$MINIO_ENV_FILE" --env "S3_BUCKET=${S3_BUCKET}" --entrypoint /bin/sh minio/mc -ec '
+    mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+    mc mb --ignore-existing "local/$S3_BUCKET" >/dev/null
+  '
+}
+
+issue_certificate() {
+  if ! command -v certbot >/dev/null 2>&1; then
+    log INFO "Installing Certbot for the TLS certificate request."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y certbot
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y certbot
+    else
+      log ERROR "Install Certbot, then run this command again."
+      exit 1
+    fi
+  fi
+  [[ -n "$CERTBOT_EMAIL" ]] || { log ERROR "CERTBOT_EMAIL is required for the certbot command."; exit 1; }
+  assert_certificate_dns
+  configure_nginx
+  certbot certonly --webroot --non-interactive --agree-tos --email "$CERTBOT_EMAIL" \
+    --cert-name "$CERTBOT_CERT_NAME" -w "$NGINX_WEBROOT" -d "$PUBLIC_SERVER_NAME"
+  configure_nginx
+  log INFO "Certificate deployed for ${PUBLIC_SERVER_NAME}. Update S3_ENDPOINT to https and rerun the relevant deployment command."
+}
+
+ensure_certificate() {
+  requires_certificate || return
+  has_certificate && return
+  [[ "$CERTBOT_AUTO_ISSUE" == "true" ]] || {
+    log ERROR "A HTTPS endpoint is configured but the ${CERTBOT_CERT_NAME} certificate is missing. Run /root/load.sh certbot or set CERTBOT_AUTO_ISSUE=true."
+    return 1
+  }
+  [[ -n "$CERTBOT_EMAIL" ]] || {
+    log ERROR "CERTBOT_EMAIL is required to automatically request the certificate for HTTPS endpoints."
+    return 1
+  }
+  log INFO "No TLS certificate is installed; requesting one automatically."
+  issue_certificate
+}
+
 deploy_webdav() {
-  local addition
+  local addition mount_path="${1:-${WEBDAV_MOUNT_PATH:-$(default_mount_path WebDav)}}"
   log INFO "Deploying the WebDAV container."
   prepare_data_dir
+  ensure_certificate
+  configure_nginx
   remove_container openlist-webdav
   docker run --detach \
     --name openlist-webdav \
@@ -225,14 +473,16 @@ deploy_webdav() {
     --arg username "$WEBDAV_USER" \
     --arg password "$WEBDAV_PASSWORD" \
     '{vendor:"other",address:$address,username:$username,password:$password,root_folder_path:"/",tls_insecure_skip_verify:false}')"
-  register_storage WebDav "$WEBDAV_MOUNT_PATH" "$addition" true
+  register_storage WebDav "$mount_path" "$addition" true
   log INFO "WebDAV deployment completed."
 }
 
 deploy_minio() {
-  local addition
+  local addition mount_path="${1:-${S3_MOUNT_PATH:-$(default_mount_path S3)}}"
   log INFO "Deploying the MinIO container."
   prepare_data_dir
+  ensure_certificate
+  configure_nginx
   remove_container openlist-minio
   docker run --detach \
     --name openlist-minio \
@@ -250,6 +500,7 @@ deploy_minio() {
     quay.io/minio/minio server /data --console-address :9001 >/dev/null
 
   wait_for_minio
+  ensure_minio_bucket
   addition="$(jq -cn \
     --arg bucket "$S3_BUCKET" \
     --arg endpoint "$S3_ENDPOINT" \
@@ -276,7 +527,7 @@ deploy_minio() {
       enable_direct_upload:false,
       direct_upload_host:""
     }')"
-  register_storage S3 "$S3_MOUNT_PATH" "$addition" false
+  register_storage S3 "$mount_path" "$addition" false
   log INFO "MinIO deployment completed."
 }
 
@@ -284,12 +535,39 @@ show_status() {
   docker ps --filter 'name=^openlist-' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 }
 
+interactive_deploy() {
+  local choice default_path mount_path
+  check_and_mount_disk
+  printf '\n1) WebDAV\n2) MinIO (S3)\n' >&2
+  read -r -p "Choose a storage protocol [1/2]: " choice </dev/tty
+  case "$choice" in
+    1)
+      default_path="$(default_mount_path WebDav)"
+      read -r -p "OpenList mount path [${default_path}]: " mount_path </dev/tty
+      deploy_webdav "${mount_path:-$default_path}"
+      ;;
+    2)
+      default_path="$(default_mount_path S3)"
+      read -r -p "OpenList mount path [${default_path}]: " mount_path </dev/tty
+      deploy_minio "${mount_path:-$default_path}"
+      ;;
+    *)
+      log ERROR "Choose 1 for WebDAV or 2 for MinIO."
+      return 2
+      ;;
+  esac
+}
+
 case "${1:-}" in
-  minio|m) deploy_minio ;;
-  webdav|w) deploy_webdav ;;
+  "") interactive_deploy ;;
+  m) deploy_minio "${2:-$(default_mount_path S3)}" ;;
+  w) deploy_webdav "${2:-$(default_mount_path WebDav)}" ;;
+  minio) deploy_minio "${2:-${S3_MOUNT_PATH:-$(default_mount_path S3)}}" ;;
+  webdav) deploy_webdav "${2:-${WEBDAV_MOUNT_PATH:-$(default_mount_path WebDav)}}" ;;
+  certbot|ssl) issue_certificate ;;
   status) show_status ;;
   *)
-    printf 'Usage: %s {minio|webdav|status}\n' "$0" >&2
+    printf 'Usage: %s [w|m|webdav|minio|certbot|status] [mount-path]\n' "$0" >&2
     exit 2
     ;;
 esac

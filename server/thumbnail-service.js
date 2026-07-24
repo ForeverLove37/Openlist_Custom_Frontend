@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import axios from "axios";
 import ffmpeg from "fluent-ffmpeg";
@@ -127,11 +128,26 @@ function sessionPassword(session, filePath) {
   return match;
 }
 
-function finalResponseUrl(response, fallbackUrl) {
-  const responseUrl = response.request?.res?.responseUrl
-    || response.request?._redirectable?._currentUrl
-    || fallbackUrl;
-  return resolveRawUrl(responseUrl, fallbackUrl);
+export async function cacheVideoSource(source, targetFile, maxBytes) {
+  const advertisedLength = Number(source.headers?.["content-length"] || 0);
+  if (Number.isFinite(advertisedLength) && advertisedLength > maxBytes) {
+    source.data?.destroy?.();
+    throw new Error(`Video source exceeds the ${Math.floor(maxBytes / 1024 / 1024)} MB thumbnail limit.`);
+  }
+  let bytes = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        callback(new Error(`Video source exceeds the ${Math.floor(maxBytes / 1024 / 1024)} MB thumbnail limit.`));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+  await pipeline(source.data, limiter, createWriteStream(targetFile, { flags: "wx" }));
+  if (bytes === 0) throw new Error("Video source was empty.");
+  return bytes;
 }
 
 export function createThumbnailService({
@@ -141,6 +157,7 @@ export function createThumbnailService({
   sessionTtlMs = Number(process.env.THUMBNAIL_SESSION_TTL_MS || 1_800_000),
   ffmpegPath = process.env.FFMPEG_PATH || DEFAULT_FFMPEG_PATH,
   maxRedirects = Number(process.env.THUMBNAIL_MAX_REDIRECTS || 5),
+  maxVideoSourceBytes = Number(process.env.THUMBNAIL_VIDEO_SOURCE_MAX_BYTES || 268_435_456),
   httpClient = axios,
 } = {}) {
   const sessions = new Map();
@@ -247,16 +264,17 @@ export function createThumbnailService({
   async function generateThumbnail(session, filePath, type, cacheFile) {
     const rawUrl = await fetchRawUrl(session, filePath);
     const temporaryFile = path.join(cacheDir, `.${path.basename(cacheFile)}-${randomBytes(8).toString("hex")}.tmp`);
+    const sourceFile = path.join(cacheDir, `.${path.basename(cacheFile)}-${randomBytes(8).toString("hex")}.source`);
     let source;
     try {
       source = await fetchSource(rawUrl, session);
       if (type === "image") {
         await pipeline(source.data, thumbnailTransformer(), createWriteStream(temporaryFile));
       } else {
-        const videoUrl = finalResponseUrl(source, rawUrl);
+        await cacheVideoSource(source, sourceFile, maxVideoSourceBytes);
         source.data.destroy();
         source = undefined;
-        await videoFrameToWebp(videoUrl, temporaryFile, ffmpegPath);
+        await videoFrameToWebp(sourceFile, temporaryFile, ffmpegPath);
       }
       await rename(temporaryFile, cacheFile);
     } catch (error) {
@@ -264,6 +282,7 @@ export function createThumbnailService({
       throw error;
     } finally {
       source?.data?.destroy?.();
+      await unlink(sourceFile).catch(() => {});
     }
   }
 
@@ -297,5 +316,5 @@ export function createThumbnailService({
     return inFlight.get(flightKey);
   }
 
-  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir, ffmpegPath, maxRedirects };
+  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir, ffmpegPath, maxRedirects, maxVideoSourceBytes };
 }

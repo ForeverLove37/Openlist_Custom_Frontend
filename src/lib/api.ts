@@ -6,6 +6,8 @@ import type {
   ManagedUser,
   OpenListStorage,
   OpenListUser,
+  SearchPage,
+  SearchRequest,
   StoragePage,
   UserPage,
 } from "./types";
@@ -87,6 +89,13 @@ export function getFile(path: string, password = "", signal?: AbortSignal) {
     { method: "POST", body: JSON.stringify({ path, password }) },
     signal,
   );
+}
+
+export function searchFiles({ parent, keywords, scope, page = 1, perPage = 100, password = "" }: SearchRequest, signal?: AbortSignal) {
+  return request<SearchPage>("/fs/search", {
+    method: "POST",
+    body: JSON.stringify({ parent, keywords, scope, page, per_page: perPage, password }),
+  }, signal);
 }
 
 export function renameEntry(path: string, name: string) {

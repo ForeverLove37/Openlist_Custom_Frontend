@@ -12,6 +12,7 @@ interface FileBrowserProps {
   onOpen: (item: OpenListItem) => void;
   onDownload: (item: OpenListItem) => void;
   canManage: boolean;
+  canCopyLink?: boolean;
   selectedNames: ReadonlySet<string>;
   onToggleSelection: (item: OpenListItem) => void;
   onToggleAll: () => void;
@@ -40,6 +41,7 @@ export function FileBrowser({
   onOpen,
   onDownload,
   canManage,
+  canCopyLink = false,
   selectedNames,
   onToggleSelection,
   onToggleAll,
@@ -47,9 +49,11 @@ export function FileBrowser({
 }: FileBrowserProps) {
   if (loading) return <LoadingGrid view={view} />;
 
-  const allSelected = items.length > 0 && items.every((item) => selectedNames.has(item.name));
+  const canActOn = (item: OpenListItem) => canManage || (canCopyLink && !item.is_dir);
+  const actionItems = items.filter(canActOn);
+  const allSelected = actionItems.length > 0 && actionItems.every((item) => selectedNames.has(item.name));
   const openContextMenu = (event: React.MouseEvent, item: OpenListItem) => {
-    if (!canManage) return;
+    if (!canActOn(item)) return;
     event.preventDefault();
     onOpenActions(item, { x: event.clientX, y: event.clientY });
   };
@@ -67,7 +71,7 @@ export function FileBrowser({
             <tr>
               <th>
                 <span className="file-table__name-heading">
-                  {canManage && <input type="checkbox" checked={allSelected} onChange={onToggleAll} aria-label={allSelected ? "Clear file selection" : "Select all visible files"} />}
+                  {actionItems.length > 0 && <input type="checkbox" checked={allSelected} onChange={onToggleAll} aria-label={allSelected ? "Clear file selection" : "Select all visible files"} />}
                   <span>Name</span>
                 </span>
               </th>
@@ -84,7 +88,7 @@ export function FileBrowser({
               return <tr className={selected ? "file-row--selected" : ""} key={item.name} onContextMenu={(event) => openContextMenu(event, item)}>
                 <td>
                   <span className="file-table__name-cell">
-                    {canManage && <input type="checkbox" checked={selected} onChange={() => onToggleSelection(item)} aria-label={`Select ${item.name}`} />}
+                    {canActOn(item) && <input type="checkbox" checked={selected} onChange={() => onToggleSelection(item)} aria-label={`Select ${item.name}`} />}
                     <button className="file-name-button" onClick={() => onOpen(item)} title={`Open ${item.name}`}>
                       {thumbnail ? <img className="file-table__thumbnail" src={thumbnail} alt="" loading="lazy" decoding="async" /> : <FileIcon item={item} />}
                       <span>{item.name}</span>
@@ -97,7 +101,7 @@ export function FileBrowser({
                 <td>
                   <span className="file-row__actions">
                     {!item.is_dir && <button className="icon-button subtle-button" onClick={() => onDownload(item)} title={`Download ${item.name}`}><Download size={18} /></button>}
-                    {canManage && <button className="icon-button subtle-button" onClick={(event) => openButtonMenu(event, item)} title={`Actions for ${item.name}`}><MoreHorizontal size={18} /></button>}
+                    {canActOn(item) && <button className="icon-button subtle-button" onClick={(event) => openButtonMenu(event, item)} title={`Actions for ${item.name}`}><MoreHorizontal size={18} /></button>}
                   </span>
                 </td>
               </tr>;
@@ -114,9 +118,9 @@ export function FileBrowser({
         const kind = getFileKind(item);
         const thumbnail = thumbnailSource(item, directoryPath, customThumbnailsEnabled);
         return (
-          <article className={`file-card${canManage ? " file-card--manageable" : ""}${selectedNames.has(item.name) ? " file-card--selected" : ""}`} key={item.name} onContextMenu={(event) => openContextMenu(event, item)}>
-            {canManage && <label className="file-card__select" title={`Select ${item.name}`}><input type="checkbox" checked={selectedNames.has(item.name)} onChange={() => onToggleSelection(item)} aria-label={`Select ${item.name}`} /></label>}
-            {canManage && <button className="icon-button file-card__more" onClick={(event) => openButtonMenu(event, item)} title={`Actions for ${item.name}`}><MoreHorizontal size={18} /></button>}
+          <article className={`file-card${canActOn(item) ? " file-card--manageable" : ""}${selectedNames.has(item.name) ? " file-card--selected" : ""}`} key={item.name} onContextMenu={(event) => openContextMenu(event, item)}>
+            {canActOn(item) && <label className="file-card__select" title={`Select ${item.name}`}><input type="checkbox" checked={selectedNames.has(item.name)} onChange={() => onToggleSelection(item)} aria-label={`Select ${item.name}`} /></label>}
+            {canActOn(item) && <button className="icon-button file-card__more" onClick={(event) => openButtonMenu(event, item)} title={`Actions for ${item.name}`}><MoreHorizontal size={18} /></button>}
             <button className="file-card__open" onClick={() => onOpen(item)} title={`Open ${item.name}`}>
               <span className="file-card__title">
                 <FileIcon item={item} size={19} />
