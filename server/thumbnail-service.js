@@ -1,0 +1,213 @@
+import { createHash, randomBytes } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdir, readdir, rename, stat, unlink } from "node:fs/promises";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import axios from "axios";
+import ffmpeg from "fluent-ffmpeg";
+import sharp from "sharp";
+
+const THUMBNAIL_WIDTH = 400;
+const THUMBNAIL_QUALITY = 80;
+
+export class ThumbnailAccessError extends Error {
+  constructor(message, status = 401) {
+    super(message);
+    this.name = "ThumbnailAccessError";
+    this.status = status;
+  }
+}
+
+export function normalizeOpenListPath(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 2048 || !value.startsWith("/") || value.includes("\0")) {
+    throw new ThumbnailAccessError("A valid OpenList path is required.", 400);
+  }
+  if (value.split("/").includes("..")) throw new ThumbnailAccessError("The thumbnail path is invalid.", 400);
+  return path.posix.normalize(value);
+}
+
+export function thumbnailCacheKey(userId, filePath, type) {
+  return createHash("sha256").update(`v1\0${userId}\0${filePath}\0${type}`).digest("hex");
+}
+
+export function fallbackSvg(type) {
+  const label = type === "video" ? "VIDEO" : "IMAGE";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" role="img" aria-label="${label} preview unavailable"><rect width="400" height="250" fill="#eef2f7"/><rect x="137" y="69" width="126" height="112" rx="12" fill="#d9e1ec"/><path d="M157 160l31-34 24 24 16-17 31 27z" fill="#a5b4c7"/><circle cx="222" cy="106" r="11" fill="#a5b4c7"/><text x="200" y="216" text-anchor="middle" fill="#69778c" font-family="Arial, sans-serif" font-size="14" font-weight="700">${label} PREVIEW UNAVAILABLE</text></svg>`;
+}
+
+function freshCacheFile(cacheFile, ttlMs) {
+  return stat(cacheFile)
+    .then((info) => info.size > 0 && Date.now() - info.mtimeMs < ttlMs)
+    .catch(() => false);
+}
+
+function resolveRawUrl(rawUrl, fallbackBaseUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl, fallbackBaseUrl);
+  } catch {
+    throw new Error("OpenList returned an invalid raw file URL.");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("OpenList returned an unsupported raw file URL.");
+  return url.toString();
+}
+
+function thumbnailTransformer() {
+  return sharp({ failOnError: false })
+    .rotate()
+    .resize({ width: THUMBNAIL_WIDTH, height: THUMBNAIL_WIDTH, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: THUMBNAIL_QUALITY });
+}
+
+async function videoFrameToWebp(rawUrl, targetFile) {
+  await new Promise((resolve, reject) => {
+    const command = ffmpeg(rawUrl)
+      .seekInput(3)
+      .outputOptions(["-frames:v 1"])
+      .format("image2")
+      .on("error", reject);
+    const frame = command.pipe();
+    pipeline(frame, thumbnailTransformer(), createWriteStream(targetFile))
+      .then(resolve)
+      .catch(reject);
+  });
+}
+
+function sessionPassword(session, filePath) {
+  let match = "";
+  let matchLength = -1;
+  for (const [directory, password] of session.passwords) {
+    if ((filePath === directory || filePath.startsWith(`${directory.endsWith("/") ? directory : `${directory}/`}`)) && directory.length > matchLength) {
+      match = password;
+      matchLength = directory.length;
+    }
+  }
+  return match;
+}
+
+export function createThumbnailService({
+  openListBaseUrl = process.env.OPENLIST_API_URL || "http://127.0.0.1:5244",
+  cacheDir = process.env.THUMBNAIL_CACHE_DIR || path.resolve(".cache/thumbnails"),
+  cacheTtlMs = Number(process.env.THUMBNAIL_CACHE_TTL_MS || 86_400_000),
+  sessionTtlMs = Number(process.env.THUMBNAIL_SESSION_TTL_MS || 1_800_000),
+  httpClient = axios,
+} = {}) {
+  const sessions = new Map();
+  const inFlight = new Map();
+  let lastPrune = 0;
+
+  async function openListRequest(endpoint, options) {
+    try {
+      return await httpClient.request({
+        url: `${openListBaseUrl}/api${endpoint}`,
+        timeout: 20_000,
+        validateStatus: () => true,
+        ...options,
+      });
+    } catch {
+      throw new Error("Could not reach the local OpenList service.");
+    }
+  }
+
+  async function createSession(authorization, directoryPath = "/", password = "") {
+    if (typeof authorization !== "string" || authorization.length > 4096) throw new ThumbnailAccessError("A valid OpenList session is required.");
+    const response = await openListRequest("/me", { method: "GET", headers: authorization ? { Authorization: authorization } : {} });
+    const user = response.data?.data;
+    if (response.status < 200 || response.status >= 300 || response.data?.code !== 200 || !Number.isInteger(user?.id)) {
+      throw new ThumbnailAccessError(response.data?.message || "OpenList authentication failed.");
+    }
+    const id = randomBytes(32).toString("base64url");
+    const normalizedDirectory = normalizeOpenListPath(directoryPath);
+    sessions.set(id, {
+      id,
+      userId: user.id,
+      authorization,
+      expiresAt: Date.now() + sessionTtlMs,
+      passwords: new Map([[normalizedDirectory, typeof password === "string" ? password : ""]]),
+    });
+    return { id, userId: user.id };
+  }
+
+  function updateSession(id, directoryPath = "/", password = "") {
+    const session = getSession(id);
+    session.passwords.set(normalizeOpenListPath(directoryPath), typeof password === "string" ? password : "");
+    session.expiresAt = Date.now() + sessionTtlMs;
+    return session;
+  }
+
+  function getSession(id) {
+    const session = sessions.get(id);
+    if (!session || session.expiresAt <= Date.now()) {
+      if (id) sessions.delete(id);
+      throw new ThumbnailAccessError("Thumbnail session expired.");
+    }
+    return session;
+  }
+
+  function deleteSession(id) {
+    if (id) sessions.delete(id);
+  }
+
+  async function fetchRawUrl(session, filePath) {
+    const response = await openListRequest("/fs/get", {
+      method: "POST",
+      headers: session.authorization ? { Authorization: session.authorization } : {},
+      data: { path: filePath, password: sessionPassword(session, filePath) },
+    });
+    if (response.status < 200 || response.status >= 300 || response.data?.code !== 200) {
+      throw new ThumbnailAccessError(response.data?.message || "OpenList denied access to this file.", response.data?.code === 403 ? 403 : 401);
+    }
+    const rawUrl = response.data?.data?.raw_url;
+    if (typeof rawUrl !== "string" || rawUrl.length === 0) throw new Error("OpenList did not provide a source file URL.");
+    return resolveRawUrl(rawUrl, openListBaseUrl);
+  }
+
+  async function generateThumbnail(session, filePath, type, cacheFile) {
+    const rawUrl = await fetchRawUrl(session, filePath);
+    const temporaryFile = path.join(cacheDir, `.${path.basename(cacheFile)}-${randomBytes(8).toString("hex")}.tmp`);
+    try {
+      if (type === "image") {
+        const source = await httpClient.get(rawUrl, { responseType: "stream", timeout: 60_000, maxRedirects: 5 });
+        await pipeline(source.data, thumbnailTransformer(), createWriteStream(temporaryFile));
+      } else {
+        await videoFrameToWebp(rawUrl, temporaryFile);
+      }
+      await rename(temporaryFile, cacheFile);
+    } catch (error) {
+      await unlink(temporaryFile).catch(() => {});
+      throw error;
+    }
+  }
+
+  async function pruneCache() {
+    if (Date.now() - lastPrune < 600_000) return;
+    lastPrune = Date.now();
+    await mkdir(cacheDir, { recursive: true });
+    const entries = await readdir(cacheDir, { withFileTypes: true });
+    await Promise.all(entries.filter((entry) => entry.isFile()).map(async (entry) => {
+      const file = path.join(cacheDir, entry.name);
+      const info = await stat(file).catch(() => null);
+      if (info && Date.now() - info.mtimeMs >= cacheTtlMs) await unlink(file).catch(() => {});
+    }));
+  }
+
+  async function getThumbnail(session, requestedPath, type) {
+    if (type !== "image" && type !== "video") throw new ThumbnailAccessError("The thumbnail type is invalid.", 400);
+    const filePath = normalizeOpenListPath(requestedPath);
+    await pruneCache();
+    await mkdir(cacheDir, { recursive: true });
+    const cacheFile = path.join(cacheDir, `${thumbnailCacheKey(session.userId, filePath, type)}.webp`);
+    if (await freshCacheFile(cacheFile, cacheTtlMs)) return cacheFile;
+
+    const flightKey = `${session.userId}:${filePath}:${type}`;
+    if (!inFlight.has(flightKey)) {
+      inFlight.set(flightKey, (async () => {
+        if (!await freshCacheFile(cacheFile, cacheTtlMs)) await generateThumbnail(session, filePath, type, cacheFile);
+        return cacheFile;
+      })().finally(() => inFlight.delete(flightKey)));
+    }
+    return inFlight.get(flightKey);
+  }
+
+  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir };
+}

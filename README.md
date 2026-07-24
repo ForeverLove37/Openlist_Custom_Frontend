@@ -1,6 +1,6 @@
 # OpenList Drive
 
-An independent, static file-browsing frontend for OpenList. It provides a responsive grid/list browser, deep-linked breadcrumbs, folder search and sorting, lazy image thumbnails, an on-demand full-resolution gallery, and Artplayer-based video playback.
+OpenList Drive is a React file browser with a lightweight Node.js BFF. It provides a responsive grid/list browser, deep-linked breadcrumbs, search and sorting, upload controls, administration panels, and cached WebP thumbnails for image and video files when a storage provider does not supply native thumbnails.
 
 For instructions on using the deployed application, see the [OpenList Drive User Guide](docs/USER_GUIDE.md).
 
@@ -9,6 +9,16 @@ For instructions on using the deployed application, see the [OpenList Drive User
 - Node.js 20 or newer
 - An OpenList backend reachable at `http://127.0.0.1:5244`
 - Nginx for production deployment
+- `ffmpeg` for video thumbnails
+
+Install `ffmpeg` on Debian or Ubuntu hosts:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ffmpeg
+```
+
+Image thumbnails use the bundled `sharp` dependency. Without `ffmpeg`, image thumbnails continue to work and video thumbnail requests return the built-in fallback preview.
 
 ## Development
 
@@ -17,7 +27,13 @@ npm install
 npm run dev
 ```
 
-Vite serves the app on `http://localhost:5173` and proxies OpenList API and media routes to port `5244`.
+In a second terminal, start the BFF used by custom thumbnails:
+
+```bash
+npm run dev:bff
+```
+
+Vite serves the app on `http://localhost:5173` and proxies OpenList API and media routes to port `5244`. The BFF listens on `http://127.0.0.1:3000`.
 
 ## Verification
 
@@ -27,15 +43,54 @@ npm run lint
 npm run build
 ```
 
-The production output is written to `dist/`.
+The production output is written to `dist/`. `npm start` serves that directory and the BFF from port `3000`.
 
 ## Production
 
-The Nginx templates in `deploy/nginx/` serve the SPA from `/var/www/openlist-custom-frontend`, proxy `/api/` to OpenList, and proxy OpenList download paths required by thumbnail and media URLs.
+The BFF serves both `dist/` and `/api/custom/*` from port `3000`. It stores generated WebP thumbnails in `.cache/thumbnails` by default. For a durable system cache, use a dedicated directory:
 
-1. Build the app and publish the contents of `dist/` to `/var/www/openlist-custom-frontend`.
-2. Install `deploy/nginx/test.erailab.com.http.conf` while obtaining the first certificate.
-3. Request the certificate with the webroot `/var/www/certbot`.
-4. Replace the HTTP template with `deploy/nginx/test.erailab.com.conf` and reload Nginx.
+```bash
+cd /root/openlist_front/custom-frontend
+npm ci
+npm run build
+sudo install -d -o root -g root -m 0755 /var/cache/openlist-drive/thumbnails
+export NODE_ENV=production
+export OPENLIST_API_URL=http://127.0.0.1:5244
+export THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
+```
 
-Folder passwords are held in memory. Authentication tokens and the selected layout are stored in browser local storage. Original image and video URLs are requested from `/api/fs/get` only when the media is opened, limiting exposure to expired storage links and avoiding full-resolution image loads in the grid.
+Use a process manager so the service restarts after a reboot. For example, with PM2:
+
+```bash
+npm install --global pm2
+pm2 start server.js --name openlist-drive-bff --time
+pm2 save
+pm2 startup
+```
+
+This repository also includes a systemd unit at `deploy/systemd/openlist-drive-bff.service` for hosts that do not use PM2:
+
+```bash
+sudo install -m 0644 deploy/systemd/openlist-drive-bff.service /etc/systemd/system/openlist-drive-bff.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now openlist-drive-bff
+sudo systemctl status openlist-drive-bff --no-pager
+```
+
+Check that the service is ready before changing Nginx:
+
+```bash
+curl --fail http://127.0.0.1:3000/healthz
+```
+
+The Nginx templates in `deploy/nginx/` proxy `/api/custom/`, SPA routes, and static assets to the BFF, while `/api/` continues to route to OpenList and download routes continue to proxy directly to OpenList. Install the appropriate template, validate it, and reload:
+
+```bash
+sudo install -m 0644 deploy/nginx/test.erailab.com.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
+sudo nginx -t
+sudo nginx -s reload
+```
+
+Use `test.erailab.com.http.conf` only before the initial TLS certificate exists. It has the same BFF proxy arrangement and retains the Certbot webroot location.
+
+The browser creates a short-lived, HTTP-only thumbnail session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. Folder passwords are retained in memory in the browser and only sent to the same-origin BFF session endpoint when needed for thumbnail access.

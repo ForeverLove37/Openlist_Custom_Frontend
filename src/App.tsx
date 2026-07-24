@@ -28,7 +28,7 @@ import { StorageManagement } from "./components/StorageManagement";
 import { UserManagement } from "./components/UserManagement";
 import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
 import { VideoModal } from "./components/VideoModal";
-import { ApiError, getCurrentUser, getFile, getToken, login, logout, setToken, uploadFile } from "./lib/api";
+import { ApiError, clearThumbnailSession, getCurrentUser, getFile, getToken, login, logout, setToken, syncThumbnailSession, uploadFile } from "./lib/api";
 import {
   directoryPathFromLocation,
   getFileKind,
@@ -75,6 +75,7 @@ export default function App() {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [user, setUser] = useState<OpenListUser | null>(null);
   const [userResolved, setUserResolved] = useState(false);
+  const [thumbnailSessionReady, setThumbnailSessionReady] = useState(false);
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -99,6 +100,16 @@ export default function App() {
   }, []);
 
   useEffect(loadUser, [loadUser]);
+
+  useEffect(() => {
+    if (!userResolved) return;
+    let active = true;
+    setThumbnailSessionReady(false);
+    void syncThumbnailSession(currentPath, passwords[currentPath] ?? "")
+      .then(() => { if (active) setThumbnailSessionReady(true); })
+      .catch(() => { if (active) setThumbnailSessionReady(false); });
+    return () => { active = false; };
+  }, [currentPath, passwords, user?.id, userResolved]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -272,6 +283,7 @@ export default function App() {
 
   const signOut = async () => {
     try { await logout(); } catch { /* Clear the local session even if the server is unavailable. */ }
+    void clearThumbnailSession().catch(() => {});
     setToken("");
     setUser(null);
     setUserResolved(true);
@@ -376,7 +388,7 @@ export default function App() {
               {query && <button className="secondary-button" onClick={() => setQuery("")}>Clear search</button>}
             </div>
           ) : (
-            <FileBrowser items={items} view={view} loading={loading} onOpen={openItem} onDownload={downloadItem} />
+            <FileBrowser items={items} view={view} loading={loading} directoryPath={currentPath} customThumbnailsEnabled={thumbnailSessionReady} onOpen={openItem} onDownload={downloadItem} />
           )}
 
           {data.readme && !loading && <div className="folder-readme"><h2>About this folder</h2><p>{data.readme}</p></div>}

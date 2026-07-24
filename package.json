@@ -5,16 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:bff": "node --watch server.js",
     "build": "tsc -b && vite build",
+    "start": "node server.js",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "artplayer": "^5.4.0",
+    "axios": "^1.18.1",
+    "express": "^5.2.1",
+    "fluent-ffmpeg": "^2.1.3",
     "lucide-react": "^1.26.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

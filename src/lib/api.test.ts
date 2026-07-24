@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createUser, getFile, listStorages, listUsers, setStorageEnabled, setToken, uploadFile } from "./api";
+import { createUser, getFile, listStorages, listUsers, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -102,5 +102,18 @@ describe("OpenList API client", () => {
 
     expect(requests[0]).toMatchObject({ method: "PUT", url: "/api/fs/form", headers: { Authorization: "upload-token", "File-Path": "%2FTeam%2Freport.txt", Overwrite: "true" } });
     expect(progress).toHaveBeenLastCalledWith(100);
+  });
+
+  it("creates a same-origin thumbnail session without exposing the token in a URL", async () => {
+    setToken("thumbnail-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: 200, message: "success", data: null }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    await syncThumbnailSession("/Pictures", "folder-password");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/custom/session");
+    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("Authorization")).toBe("thumbnail-token");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ path: "/Pictures", password: "folder-password" });
   });
 });

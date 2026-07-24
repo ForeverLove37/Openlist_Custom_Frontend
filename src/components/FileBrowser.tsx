@@ -1,12 +1,14 @@
 import { Download, ImageOff, MoreHorizontal } from "lucide-react";
 import { FileIcon } from "./FileIcon";
-import { formatDate, formatSize, getFileKind } from "../lib/files";
+import { formatDate, formatSize, getFileKind, thumbnailSource } from "../lib/files";
 import type { OpenListItem, ViewMode } from "../lib/types";
 
 interface FileBrowserProps {
   items: OpenListItem[];
   view: ViewMode;
   loading: boolean;
+  directoryPath: string;
+  customThumbnailsEnabled: boolean;
   onOpen: (item: OpenListItem) => void;
   onDownload: (item: OpenListItem) => void;
 }
@@ -24,7 +26,7 @@ function LoadingGrid({ view }: { view: ViewMode }) {
   );
 }
 
-export function FileBrowser({ items, view, loading, onOpen, onDownload }: FileBrowserProps) {
+export function FileBrowser({ items, view, loading, directoryPath, customThumbnailsEnabled, onOpen, onDownload }: FileBrowserProps) {
   if (loading) return <LoadingGrid view={view} />;
 
   if (view === "list") {
@@ -41,11 +43,12 @@ export function FileBrowser({ items, view, loading, onOpen, onDownload }: FileBr
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
-              <tr key={item.name}>
+            {items.map((item) => {
+              const thumbnail = thumbnailSource(item, directoryPath, customThumbnailsEnabled);
+              return <tr key={item.name}>
                 <td>
                   <button className="file-name-button" onClick={() => onOpen(item)} title={`Open ${item.name}`}>
-                    <FileIcon item={item} />
+                    {thumbnail ? <img className="file-table__thumbnail" src={thumbnail} alt="" loading="lazy" decoding="async" /> : <FileIcon item={item} />}
                     <span>{item.name}</span>
                   </button>
                 </td>
@@ -61,8 +64,8 @@ export function FileBrowser({ items, view, loading, onOpen, onDownload }: FileBr
                     <MoreHorizontal aria-hidden="true" className="placeholder-action" size={18} />
                   )}
                 </td>
-              </tr>
-            ))}
+              </tr>;
+            })}
           </tbody>
         </table>
       </div>
@@ -73,7 +76,7 @@ export function FileBrowser({ items, view, loading, onOpen, onDownload }: FileBr
     <div className="file-grid">
       {items.map((item) => {
         const kind = getFileKind(item);
-        const showThumbnail = kind === "image" && Boolean(item.thumb);
+        const thumbnail = thumbnailSource(item, directoryPath, customThumbnailsEnabled);
         return (
           <article className="file-card" key={item.name}>
             <button className="file-card__open" onClick={() => onOpen(item)} title={`Open ${item.name}`}>
@@ -82,8 +85,8 @@ export function FileBrowser({ items, view, loading, onOpen, onDownload }: FileBr
                 <span>{item.name}</span>
               </span>
               <span className={`file-card__preview file-card__preview--${kind}`}>
-                {showThumbnail ? (
-                  <img src={item.thumb} alt="" loading="lazy" decoding="async" />
+                {thumbnail ? (
+                  <img src={thumbnail} alt="" loading="lazy" decoding="async" />
                 ) : kind === "image" ? (
                   <ImageOff aria-hidden="true" size={38} strokeWidth={1.4} />
                 ) : (

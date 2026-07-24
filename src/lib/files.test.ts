@@ -6,6 +6,7 @@ import {
   joinPath,
   locationFromDirectoryPath,
   sortItems,
+  thumbnailSource,
 } from "./files";
 import type { OpenListItem } from "./types";
 
@@ -46,5 +47,13 @@ describe("file helpers", () => {
   it("formats file sizes for scanning", () => {
     expect(formatSize(0)).toBe("0 B");
     expect(formatSize(1_572_864)).toBe("1.5 MB");
+  });
+
+  it("uses the BFF only when OpenList did not supply a media thumbnail", () => {
+    expect(thumbnailSource(item("photo.jpg"), "/Pictures")).toBe("/api/custom/thumb?path=%2FPictures%2Fphoto.jpg&type=image");
+    expect(thumbnailSource(item("clip.mp4"), "/Videos")).toBe("/api/custom/thumb?path=%2FVideos%2Fclip.mp4&type=video");
+    expect(thumbnailSource({ ...item("native.jpg"), thumb: "/native-thumb" }, "/Pictures")).toBe("/native-thumb");
+    expect(thumbnailSource(item("notes.txt"), "/", true)).toBe("");
+    expect(thumbnailSource(item("photo.jpg"), "/Pictures", false)).toBe("");
   });
 });

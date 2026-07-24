@@ -21,10 +21,17 @@ describe("FileBrowser", () => {
   it("renders the API thumbnail and opens the selected item", () => {
     const onOpen = vi.fn();
     const { container } = render(
-      <FileBrowser items={[photo]} view="grid" loading={false} onOpen={onOpen} onDownload={vi.fn()} />,
+      <FileBrowser items={[photo]} view="grid" loading={false} directoryPath="/" customThumbnailsEnabled onOpen={onOpen} onDownload={vi.fn()} />,
     );
     expect(container.querySelector("img")).toHaveAttribute("src", photo.thumb);
     fireEvent.click(screen.getByTitle("Open mountain.jpg"));
     expect(onOpen).toHaveBeenCalledWith(photo);
+  });
+
+  it("uses the custom thumbnail endpoint for media without a native thumbnail", () => {
+    const { container } = render(
+      <FileBrowser items={[{ ...photo, thumb: "" }]} view="grid" loading={false} directoryPath="/Pictures" customThumbnailsEnabled onOpen={vi.fn()} onDownload={vi.fn()} />,
+    );
+    expect(container.querySelector("img")).toHaveAttribute("src", "/api/custom/thumb?path=%2FPictures%2Fmountain.jpg&type=image");
   });
 });

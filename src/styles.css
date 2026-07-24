@@ -251,6 +251,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .file-table tbody tr:hover { background: #f7f9fc; }
 .file-name-button { display: flex; width: 100%; min-width: 0; align-items: center; gap: 11px; border: 0; background: transparent; padding: 8px 0; cursor: pointer; text-align: left; }
 .file-name-button span { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.file-table__thumbnail { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 4px; background: #edf1f6; object-fit: cover; }
 .muted-cell { color: #667085; white-space: nowrap; }
 .placeholder-action { color: transparent; }
 

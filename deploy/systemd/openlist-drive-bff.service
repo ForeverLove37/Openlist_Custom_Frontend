@@ -1,0 +1,22 @@
+[Unit]
+Description=OpenList Drive thumbnail BFF
+After=network.target docker.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/openlist_front/custom-frontend
+Environment=NODE_ENV=production
+Environment=OPENLIST_API_URL=http://127.0.0.1:5244
+Environment=THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+ExecStart=/usr/bin/node /root/openlist_front/custom-frontend/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

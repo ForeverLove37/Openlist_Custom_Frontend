@@ -33,6 +33,18 @@ export function joinPath(parent: string, child: string) {
   return `${cleanParent}/${child}`;
 }
 
+export function thumbnailSource(
+  item: Pick<OpenListItem, "name" | "is_dir" | "thumb">,
+  directoryPath: string,
+  customThumbnailsEnabled = true,
+) {
+  if (item.thumb) return item.thumb;
+  const kind = getFileKind(item);
+  if (!customThumbnailsEnabled || (kind !== "image" && kind !== "video")) return "";
+  const filePath = joinPath(directoryPath, item.name);
+  return `/api/custom/thumb?path=${encodeURIComponent(filePath)}&type=${kind}`;
+}
+
 export function formatSize(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return bytes === 0 ? "0 B" : "—";
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];

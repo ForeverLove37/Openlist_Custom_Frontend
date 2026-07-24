@@ -161,6 +161,17 @@ export function deleteUser(id: number) {
   return request<unknown>(`/admin/user/delete?id=${encodeURIComponent(id)}`, { method: "POST" });
 }
 
+export function syncThumbnailSession(path: string, password = "") {
+  return request<unknown>("/custom/session", {
+    method: "POST",
+    body: JSON.stringify({ path, password }),
+  });
+}
+
+export function clearThumbnailSession() {
+  return request<unknown>("/custom/session/clear", { method: "POST" });
+}
+
 interface UploadOptions {
   password?: string;
   signal?: AbortSignal;
