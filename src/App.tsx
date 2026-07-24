@@ -3,6 +3,7 @@ import {
   ArrowDownAZ,
   ChevronDown,
   ChevronRight,
+  CheckCircle2,
   CircleUserRound,
   Cloud,
   Files,
@@ -23,13 +24,37 @@ import {
 } from "lucide-react";
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
+import {
+  DeleteDialog,
+  FileActionMenu,
+  FileSelectionBar,
+  FolderPickerDialog,
+  RenameDialog,
+  type FileOperation,
+  type FileOperationPermissions,
+} from "./components/FileOperations";
 import { Gallery } from "./components/Gallery";
 import { NativeManagement } from "./components/NativeManagement";
 import { StorageManagement } from "./components/StorageManagement";
 import { UserManagement } from "./components/UserManagement";
 import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
 import { VideoModal } from "./components/VideoModal";
-import { ApiError, clearThumbnailSession, getCurrentUser, getFile, getToken, login, logout, setToken, syncThumbnailSession, uploadFile } from "./lib/api";
+import {
+  ApiError,
+  clearThumbnailSession,
+  copyEntries,
+  getCurrentUser,
+  getFile,
+  getToken,
+  login,
+  logout,
+  moveEntries,
+  removeEntries,
+  renameEntry,
+  setToken,
+  syncThumbnailSession,
+  uploadFile,
+} from "./lib/api";
 import {
   directoryPathFromLocation,
   getFileKind,
@@ -70,6 +95,7 @@ export default function App() {
   const [video, setVideo] = useState<VideoSelection | null>(null);
   const [mediaLoading, setMediaLoading] = useState("");
   const [notice, setNotice] = useState("");
+  const [noticeTone, setNoticeTone] = useState<"error" | "success">("error");
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -80,6 +106,11 @@ export default function App() {
   const [thumbnailSessionReady, setThumbnailSessionReady] = useState(false);
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set());
+  const [actionMenu, setActionMenu] = useState<{ x: number; y: number } | null>(null);
+  const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
+  const [operationBusy, setOperationBusy] = useState(false);
+  const [operationError, setOperationError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadControllers = useRef(new Map<string, AbortController>());
   const uploadSequence = useRef(0);
@@ -87,6 +118,12 @@ export default function App() {
   const { data, loading, error, refresh } = useDirectory(currentPath, passwords[currentPath] ?? "", appView === "files");
 
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
+  useEffect(() => {
+    setSelectedNames(new Set());
+    setActionMenu(null);
+    setFileOperation(null);
+    setOperationError("");
+  }, [currentPath]);
   useEffect(() => () => { uploadControllers.current.forEach((controller) => controller.abort()); }, []);
 
   const loadUser = useCallback(() => {
@@ -168,6 +205,7 @@ export default function App() {
     try {
       return await getFile(itemPath, passwords[currentPath] ?? "");
     } catch (reason) {
+      setNoticeTone("error");
       setNotice(reason instanceof ApiError ? reason.message : `Could not open ${item.name}.`);
       return null;
     } finally {
@@ -212,6 +250,85 @@ export default function App() {
   };
 
   const canUpload = !loading && data.write && (user?.role === ADMIN_ROLE || data.write_content_bypass || Boolean(user && (user.permission & (1 << 3))));
+  const hasFilePermission = useCallback((bit: number) => user?.role === ADMIN_ROLE || Boolean(user && (user.permission & (1 << bit))), [user]);
+  const filePermissions = useMemo<FileOperationPermissions>(() => ({
+    rename: Boolean(data.write && hasFilePermission(4)),
+    move: Boolean(data.write && hasFilePermission(5)),
+    copy: hasFilePermission(6),
+    delete: Boolean(data.write && hasFilePermission(7)),
+  }), [data.write, hasFilePermission]);
+  const canManageFiles = Object.values(filePermissions).some(Boolean);
+  const selectedItems = useMemo(() => (data.content ?? []).filter((item) => selectedNames.has(item.name)), [data.content, selectedNames]);
+
+  const toggleSelection = useCallback((item: OpenListItem) => {
+    setSelectedNames((current) => {
+      const next = new Set(current);
+      if (next.has(item.name)) next.delete(item.name);
+      else next.add(item.name);
+      return next;
+    });
+    setActionMenu(null);
+  }, []);
+  const toggleAll = useCallback(() => {
+    setSelectedNames((current) => {
+      const next = new Set(current);
+      const allSelected = items.length > 0 && items.every((item) => next.has(item.name));
+      for (const item of items) {
+        if (allSelected) next.delete(item.name);
+        else next.add(item.name);
+      }
+      return next;
+    });
+  }, [items]);
+  const openFileActions = useCallback((item: OpenListItem, point: { x: number; y: number }) => {
+    setSelectedNames((current) => current.has(item.name) ? current : new Set([item.name]));
+    setActionMenu(point);
+  }, []);
+  const beginFileOperation = useCallback((operation: FileOperation) => {
+    setActionMenu(null);
+    setOperationError("");
+    setFileOperation(operation);
+  }, []);
+  const closeFileOperation = useCallback(() => {
+    if (operationBusy) return;
+    setFileOperation(null);
+    setOperationError("");
+  }, [operationBusy]);
+  const completeFileOperation = useCallback((message: string) => {
+    setFileOperation(null);
+    setSelectedNames(new Set());
+    setOperationError("");
+    setNoticeTone("success");
+    setNotice(message);
+    refresh();
+    window.setTimeout(refresh, 900);
+  }, [refresh]);
+  const runFileOperation = useCallback(async (operation: FileOperation, value?: string) => {
+    if (selectedItems.length === 0) return;
+    setOperationBusy(true);
+    setOperationError("");
+    try {
+      const names = selectedItems.map((item) => item.name);
+      if (operation === "rename") {
+        if (selectedItems.length !== 1 || !value) return;
+        await renameEntry(joinPath(currentPath, selectedItems[0].name), value);
+        completeFileOperation(`Renamed ${selectedItems[0].name} to ${value}.`);
+      } else if (operation === "delete") {
+        await removeEntries(currentPath, names);
+        completeFileOperation(`Deleted ${names.length} ${names.length === 1 ? "item" : "items"}.`);
+      } else if (operation === "copy" && value) {
+        await copyEntries(currentPath, value, names);
+        completeFileOperation(`Copy ${names.length === 1 ? "operation" : "operations"} started.`);
+      } else if (operation === "move" && value) {
+        await moveEntries(currentPath, value, names);
+        completeFileOperation(`Move ${names.length === 1 ? "operation" : "operations"} started.`);
+      }
+    } catch (reason) {
+      setOperationError(reason instanceof ApiError ? reason.message : `Could not ${operation} the selected ${selectedItems.length === 1 ? "item" : "items"}.`);
+    } finally {
+      setOperationBusy(false);
+    }
+  }, [completeFileOperation, currentPath, selectedItems]);
   const updateUpload = useCallback((id: string, update: Partial<UploadEntry>) => {
     setUploads((items) => items.map((item) => item.id === id ? { ...item, ...update } : item));
   }, []);
@@ -385,6 +502,8 @@ export default function App() {
 
           {data.header && !loading && <div className="folder-note">{data.header}</div>}
 
+          <FileSelectionBar count={selectedItems.length} permissions={filePermissions} onAction={beginFileOperation} onClear={() => { setSelectedNames(new Set()); setActionMenu(null); }} />
+
           {error ? (
             <ErrorState error={error} onRetry={refresh} onLogin={() => setLoginOpen(true)} onPassword={() => setPasswordOpen(true)} />
           ) : !loading && items.length === 0 ? (
@@ -395,7 +514,20 @@ export default function App() {
               {query && <button className="secondary-button" onClick={() => setQuery("")}>Clear search</button>}
             </div>
           ) : (
-            <FileBrowser items={items} view={view} loading={loading} directoryPath={currentPath} customThumbnailsEnabled={thumbnailSessionReady} onOpen={openItem} onDownload={downloadItem} />
+            <FileBrowser
+              items={items}
+              view={view}
+              loading={loading}
+              directoryPath={currentPath}
+              customThumbnailsEnabled={thumbnailSessionReady}
+              onOpen={openItem}
+              onDownload={downloadItem}
+              canManage={canManageFiles}
+              selectedNames={selectedNames}
+              onToggleSelection={toggleSelection}
+              onToggleAll={toggleAll}
+              onOpenActions={openFileActions}
+            />
           )}
 
           {data.readme && !loading && <div className="folder-readme"><h2>About this folder</h2><p>{data.readme}</p></div>}
@@ -417,8 +549,12 @@ export default function App() {
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
       {video && <VideoModal {...video} onClose={() => setVideo(null)} />}
       {mediaLoading && <div className="media-loading" role="status"><LoaderCircle className="spin" size={21} /><span>Preparing {mediaLoading}</span></div>}
-      {notice && <div className={`toast${uploads.length ? " toast--with-uploads" : ""}`} role="alert"><ShieldAlert size={19} /><span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
+      {notice && <div className={`toast${noticeTone === "success" ? " toast--success" : ""}${uploads.length ? " toast--with-uploads" : ""}`} role={noticeTone === "error" ? "alert" : "status"}>{noticeTone === "success" ? <CheckCircle2 size={19} /> : <ShieldAlert size={19} />}<span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
       <UploadQueue uploads={uploads} onCancel={cancelUpload} onDismiss={dismissUpload} onClearCompleted={clearCompletedUploads} />
+      {actionMenu && selectedItems.length > 0 && <FileActionMenu point={actionMenu} count={selectedItems.length} permissions={filePermissions} onAction={beginFileOperation} onClose={() => setActionMenu(null)} />}
+      {fileOperation === "rename" && selectedItems.length === 1 && <RenameDialog item={selectedItems[0]} busy={operationBusy} error={operationError} onClose={closeFileOperation} onSubmit={(name) => void runFileOperation("rename", name)} />}
+      {fileOperation === "delete" && selectedItems.length > 0 && <DeleteDialog items={selectedItems} busy={operationBusy} error={operationError} onClose={closeFileOperation} onConfirm={() => void runFileOperation("delete")} />}
+      {(fileOperation === "copy" || fileOperation === "move") && selectedItems.length > 0 && <FolderPickerDialog operation={fileOperation} sourcePath={currentPath} items={selectedItems} passwords={passwords} busy={operationBusy} operationError={operationError} onClose={closeFileOperation} onConfirm={(destination) => void runFileOperation(fileOperation, destination)} />}
       {loginOpen && <LoginDialog busy={loginBusy} error={loginError} needsOtp={needsOtp} onClose={() => { setLoginOpen(false); setLoginError(""); }} onSubmit={submitLogin} />}
       {passwordOpen && <PasswordDialog path={currentPath} onClose={() => setPasswordOpen(false)} onSubmit={(password) => { setPasswords((value) => ({ ...value, [currentPath]: password })); setPasswordOpen(false); }} />}
     </div>

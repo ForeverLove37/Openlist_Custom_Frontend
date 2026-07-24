@@ -61,20 +61,58 @@ function thumbnailTransformer() {
     .webp({ quality: THUMBNAIL_QUALITY });
 }
 
-async function videoFrameToWebp(rawUrl, targetFile, ffmpegPath) {
+function safeFfmpegDetail(lines) {
+  return lines
+    .slice(-4)
+    .join(" ")
+    .replace(/https?:\/\/\S+/gi, "[source]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+async function extractVideoFrame(rawUrl, targetFile, ffmpegPath, seekSeconds) {
   ffmpeg.setFfmpegPath(ffmpegPath);
   await new Promise((resolve, reject) => {
+    const stderr = [];
+    let settled = false;
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
     const command = ffmpeg(rawUrl)
-      .seekInput(3)
+      .seekInput(seekSeconds)
       .outputOptions(["-frames:v 1"])
       .videoCodec("png")
       .format("image2pipe")
-      .on("error", reject);
+      .on("stderr", (line) => stderr.push(line))
+      .on("error", (error) => {
+        const detail = safeFfmpegDetail(stderr);
+        settle(reject, new Error(`FFmpeg could not extract a frame at ${seekSeconds}s${detail ? `: ${detail}` : ""}`, { cause: error }));
+      });
     const frame = command.pipe();
     pipeline(frame, thumbnailTransformer(), createWriteStream(targetFile))
-      .then(resolve)
-      .catch(reject);
+      .then(() => settle(resolve))
+      .catch((error) => settle(reject, error));
   });
+}
+
+export async function videoFrameToWebp(rawUrl, targetFile, ffmpegPath) {
+  try {
+    await extractVideoFrame(rawUrl, targetFile, ffmpegPath, 3);
+  } catch (firstError) {
+    await unlink(targetFile).catch(() => {});
+    try {
+      await extractVideoFrame(rawUrl, targetFile, ffmpegPath, 0);
+    } catch (secondError) {
+      throw new AggregateError(
+        [firstError, secondError],
+        `Video thumbnail extraction failed after retry: ${secondError.message}`,
+        { cause: secondError },
+      );
+    }
+  }
 }
 
 function sessionPassword(session, filePath) {

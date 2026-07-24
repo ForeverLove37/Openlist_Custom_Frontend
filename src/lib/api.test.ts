@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createUser, getFile, listStorages, listUsers, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
+import { copyEntries, createUser, getFile, listStorages, listUsers, moveEntries, removeEntries, renameEntry, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -106,14 +106,31 @@ describe("OpenList API client", () => {
 
   it("creates a same-origin thumbnail session without exposing the token in a URL", async () => {
     setToken("thumbnail-token");
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ code: 200, message: "success", data: null }), { status: 200, headers: { "Content-Type": "application/json" } }),
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => (
+      new Response(JSON.stringify({ code: 200, message: "success", data: null }), { status: 200, headers: { "Content-Type": "application/json" } })
+    ));
 
     await syncThumbnailSession("/Pictures", "folder-password");
 
     expect(fetchMock.mock.calls[0][0]).toBe("/api/custom/session");
     expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("Authorization")).toBe("thumbnail-token");
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ path: "/Pictures", password: "folder-password" });
+  });
+
+  it("maps file management operations to the OpenList batch contracts", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => (
+      new Response(JSON.stringify({ code: 200, message: "success", data: null }), { status: 200, headers: { "Content-Type": "application/json" } })
+    ));
+
+    await renameEntry("/Team/old.txt", "new.txt");
+    await removeEntries("/Team", ["old.txt", "draft"]);
+    await copyEntries("/Team", "/Archive", ["report.txt"]);
+    await moveEntries("/Team", "/Published", ["final.txt"]);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/fs/rename", "/api/fs/remove", "/api/fs/copy", "/api/fs/move"]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ path: "/Team/old.txt", name: "new.txt", overwrite: false });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ dir: "/Team", names: ["old.txt", "draft"] });
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toMatchObject({ src_dir: "/Team", dst_dir: "/Archive", names: ["report.txt"], overwrite: false });
+    expect(JSON.parse(String(fetchMock.mock.calls[3][1]?.body))).toMatchObject({ src_dir: "/Team", dst_dir: "/Published", names: ["final.txt"], overwrite: false });
   });
 });

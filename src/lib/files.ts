@@ -33,6 +33,16 @@ export function joinPath(parent: string, child: string) {
   return `${cleanParent}/${child}`;
 }
 
+export function destinationError(sourcePath: string, items: Pick<OpenListItem, "name" | "is_dir">[], destination: string) {
+  if (destination === sourcePath) return "Choose a folder other than the current folder.";
+  for (const item of items) {
+    if (!item.is_dir) continue;
+    const source = joinPath(sourcePath, item.name);
+    if (destination === source || destination.startsWith(`${source}/`)) return `Choose a folder outside ${item.name}.`;
+  }
+  return "";
+}
+
 export function thumbnailSource(
   item: Pick<OpenListItem, "name" | "is_dir" | "thumb">,
   directoryPath: string,

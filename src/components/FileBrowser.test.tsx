@@ -18,10 +18,18 @@ const photo: OpenListItem = {
 };
 
 describe("FileBrowser", () => {
+  const managementProps = {
+    canManage: false,
+    selectedNames: new Set<string>(),
+    onToggleSelection: vi.fn(),
+    onToggleAll: vi.fn(),
+    onOpenActions: vi.fn(),
+  };
+
   it("renders the API thumbnail and opens the selected item", () => {
     const onOpen = vi.fn();
     const { container } = render(
-      <FileBrowser items={[photo]} view="grid" loading={false} directoryPath="/" customThumbnailsEnabled onOpen={onOpen} onDownload={vi.fn()} />,
+      <FileBrowser items={[photo]} view="grid" loading={false} directoryPath="/" customThumbnailsEnabled onOpen={onOpen} onDownload={vi.fn()} {...managementProps} />,
     );
     expect(container.querySelector("img")).toHaveAttribute("src", photo.thumb);
     fireEvent.click(screen.getByTitle("Open mountain.jpg"));
@@ -30,8 +38,37 @@ describe("FileBrowser", () => {
 
   it("uses the custom thumbnail endpoint for media without a native thumbnail", () => {
     const { container } = render(
-      <FileBrowser items={[{ ...photo, thumb: "" }]} view="grid" loading={false} directoryPath="/Pictures" customThumbnailsEnabled onOpen={vi.fn()} onDownload={vi.fn()} />,
+      <FileBrowser items={[{ ...photo, thumb: "" }]} view="grid" loading={false} directoryPath="/Pictures" customThumbnailsEnabled onOpen={vi.fn()} onDownload={vi.fn()} {...managementProps} />,
     );
     expect(container.querySelector("img")).toHaveAttribute("src", "/api/custom/thumb?path=%2FPictures%2Fmountain.jpg&type=image");
+  });
+
+  it("selects items and opens their action menu without opening the file", () => {
+    const onOpen = vi.fn();
+    const onToggleSelection = vi.fn();
+    const onOpenActions = vi.fn();
+    render(
+      <FileBrowser
+        items={[photo]}
+        view="list"
+        loading={false}
+        directoryPath="/Pictures"
+        customThumbnailsEnabled
+        onOpen={onOpen}
+        onDownload={vi.fn()}
+        canManage
+        selectedNames={new Set()}
+        onToggleSelection={onToggleSelection}
+        onToggleAll={vi.fn()}
+        onOpenActions={onOpenActions}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Select mountain.jpg"));
+    fireEvent.click(screen.getByTitle("Actions for mountain.jpg"));
+
+    expect(onToggleSelection).toHaveBeenCalledWith(photo);
+    expect(onOpenActions).toHaveBeenCalledWith(photo, expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }));
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });

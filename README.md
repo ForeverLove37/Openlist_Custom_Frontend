@@ -106,3 +106,27 @@ sudo nginx -s reload
 Use `test.erailab.com.http.conf` only before the initial TLS certificate exists. It has the same BFF proxy arrangement and retains the Certbot webroot location.
 
 The browser creates a short-lived, HTTP-only BFF session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. The same server-side session authorizes the native management tunnel and nested remote-storage controls for administrator accounts. Remote connection tokens are read from the local OpenList configuration by the BFF and are never returned to the browser.
+
+## Remote storage deployment helper
+
+`deploy/remote/load.sh` provides repeatable WebDAV and MinIO deployment for a remote storage host. It binds service ports to loopback, sets `restart=always`, adds a MinIO health check, and updates an existing OpenList mount by exact mount path. The S3 payload always uses a positive `sign_url_expire` value so generated download URLs are valid.
+
+Install the script and create its two root-only configuration files from the included examples:
+
+```bash
+sudo install -m 0750 deploy/remote/load.sh /root/load.sh
+sudo install -m 0600 deploy/remote/openlist-storage-deploy.env.example /root/.config/openlist-storage-deploy.env
+sudo install -m 0600 deploy/remote/openlist-minio.env.example /root/.config/openlist-minio.env
+sudoedit /root/.config/openlist-storage-deploy.env
+sudoedit /root/.config/openlist-minio.env
+```
+
+Run one deployment at a time, or inspect current container health and port bindings:
+
+```bash
+sudo /root/load.sh webdav
+sudo /root/load.sh minio
+sudo /root/load.sh status
+```
+
+Credentials remain in the mode-`600` environment files and are passed to MinIO with Docker's `--env-file`; they are not embedded in the script. Deployment logs are appended to `/var/log/openlist-storage-deploy/load.log`.

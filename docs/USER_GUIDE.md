@@ -102,6 +102,17 @@ The **Upload** button appears when your account has upload permission for the cu
 
 Uploads are placed in the folder that was open when the files were selected or dropped, even if you navigate away while they are in progress. Select the close icon on an active upload to cancel it. Completed entries can be dismissed or cleared together.
 
+## Manage files and folders
+
+Rename, copy, move, and delete controls appear only when your account has the corresponding OpenList permission.
+
+1. Select the checkbox on one or more file cards or list rows. Use the checkbox beside **Name** in list view to select every visible item.
+2. Choose an operation in the selection bar. You can also select the three-dot menu on an item or right-click it.
+3. For copy or move, browse to the destination folder and select **Copy here** or **Move here**. The destination must be writable. A folder cannot be placed inside itself.
+4. Confirm deletion when prompted. Deletion is permanent.
+
+Rename is available only when one item is selected. Copy and move never overwrite an existing item with the same name; choose a different destination or rename the existing item first.
+
 ## Unlock a protected folder
 
 If a folder is password protected, the application displays a password prompt:
@@ -176,6 +187,8 @@ Enter the folder password. If it is rejected, confirm the password with the pers
 ### A folder does not show recent changes
 
 Select the refresh button. If the contents still do not update, reload the browser page.
+
+Copy and move may run as background OpenList tasks. The app refreshes the folder after starting the operation, but a large transfer can take longer to appear at its destination.
 
 ### An image, video, or download does not open
 

@@ -89,6 +89,42 @@ export function getFile(path: string, password = "", signal?: AbortSignal) {
   );
 }
 
+export function renameEntry(path: string, name: string) {
+  return request<unknown>("/fs/rename", {
+    method: "POST",
+    body: JSON.stringify({ path, name, overwrite: false }),
+  });
+}
+
+export function removeEntries(dir: string, names: string[]) {
+  return request<unknown>("/fs/remove", {
+    method: "POST",
+    body: JSON.stringify({ dir, names }),
+  });
+}
+
+function transferEntries(endpoint: "/fs/copy" | "/fs/move", srcDir: string, dstDir: string, names: string[]) {
+  return request<unknown>(endpoint, {
+    method: "POST",
+    body: JSON.stringify({
+      src_dir: srcDir,
+      dst_dir: dstDir,
+      names,
+      overwrite: false,
+      skip_existing: false,
+      merge: false,
+    }),
+  });
+}
+
+export function copyEntries(srcDir: string, dstDir: string, names: string[]) {
+  return transferEntries("/fs/copy", srcDir, dstDir, names);
+}
+
+export function moveEntries(srcDir: string, dstDir: string, names: string[]) {
+  return transferEntries("/fs/move", srcDir, dstDir, names);
+}
+
 export function login(username: string, password: string, otpCode = "") {
   return request<LoginResult>("/auth/login", {
     method: "POST",
