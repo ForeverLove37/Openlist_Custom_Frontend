@@ -85,6 +85,7 @@ export function createApp({
         response.status(error.status).json({ code: error.status, message: error.message, data: null });
         return;
       }
+      console.warn(`[thumbnail] ${type === "video" ? "video" : "image"} generation failed: ${error instanceof Error ? error.message : "unknown error"}`);
       response.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
       response.type("image/svg+xml").status(200).send(fallbackSvg(type));
     }

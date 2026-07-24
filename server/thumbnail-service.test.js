@@ -1,3 +1,8 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
+import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import { createThumbnailService, fallbackSvg, normalizeOpenListPath, thumbnailCacheKey } from "./thumbnail-service.js";
 
@@ -25,6 +30,35 @@ describe("thumbnail service helpers", () => {
       headers: { Authorization: "jwt-token" },
     }));
     expect(service.getSession(session.id)).toMatchObject({ userId: 7, authorization: "jwt-token" });
+  });
+
+  it("pipes a source image stream through Sharp and caches WebP output", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "openlist-thumb-test-"));
+    const input = await sharp({ create: { width: 800, height: 600, channels: 3, background: "#0f766e" } }).png().toBuffer();
+    const httpClient = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { id: 7 } } })
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { raw_url: "http://openlist.test/photo.png" } } }),
+      get: vi.fn().mockResolvedValue({ status: 200, data: Readable.from(input) }),
+    };
+    const service = createThumbnailService({ openListBaseUrl: "http://openlist.test", cacheDir, httpClient });
+
+    try {
+      const session = await service.createSession("jwt-token", "/Pictures");
+      const output = await service.getThumbnail(service.getSession(session.id), "/Pictures/photo.png", "image");
+      const metadata = await sharp(output).metadata();
+
+      expect(metadata.format).toBe("webp");
+      expect(metadata.width).toBe(400);
+      expect(metadata.height).toBe(300);
+      expect(httpClient.get).toHaveBeenCalledWith("http://openlist.test/photo.png", expect.objectContaining({
+        responseType: "stream",
+        headers: { Authorization: "jwt-token" },
+      }));
+      expect(service.ffmpegPath).toBe("/usr/bin/ffmpeg");
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
   });
 
   it("uses a media-specific SVG fallback", () => {

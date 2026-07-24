@@ -9,7 +9,7 @@ For instructions on using the deployed application, see the [OpenList Drive User
 - Node.js 20 or newer
 - An OpenList backend reachable at `http://127.0.0.1:5244`
 - Nginx for production deployment
-- `ffmpeg` for video thumbnails
+- `ffmpeg` for video thumbnails (the production unit defaults to `/usr/bin/ffmpeg`; override with `FFMPEG_PATH` if needed)
 
 Install `ffmpeg` on Debian or Ubuntu hosts:
 
@@ -57,6 +57,7 @@ sudo install -d -o root -g root -m 0755 /var/cache/openlist-drive/thumbnails
 export NODE_ENV=production
 export OPENLIST_API_URL=http://127.0.0.1:5244
 export THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
+export FFMPEG_PATH=/usr/bin/ffmpeg
 ```
 
 Use a process manager so the service restarts after a reboot. For example, with PM2:

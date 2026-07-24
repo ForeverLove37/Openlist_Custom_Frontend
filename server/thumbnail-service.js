@@ -9,6 +9,7 @@ import sharp from "sharp";
 
 const THUMBNAIL_WIDTH = 400;
 const THUMBNAIL_QUALITY = 80;
+const DEFAULT_FFMPEG_PATH = "/usr/bin/ffmpeg";
 
 export class ThumbnailAccessError extends Error {
   constructor(message, status = 401) {
@@ -53,13 +54,15 @@ function resolveRawUrl(rawUrl, fallbackBaseUrl) {
 }
 
 function thumbnailTransformer() {
-  return sharp({ failOnError: false })
+  // Calling sharp with no input configures a duplex stream for pipeline().
+  return sharp()
     .rotate()
     .resize({ width: THUMBNAIL_WIDTH, height: THUMBNAIL_WIDTH, fit: "inside", withoutEnlargement: true })
     .webp({ quality: THUMBNAIL_QUALITY });
 }
 
-async function videoFrameToWebp(rawUrl, targetFile) {
+async function videoFrameToWebp(rawUrl, targetFile, ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
   await new Promise((resolve, reject) => {
     const command = ffmpeg(rawUrl)
       .seekInput(3)
@@ -90,6 +93,7 @@ export function createThumbnailService({
   cacheDir = process.env.THUMBNAIL_CACHE_DIR || path.resolve(".cache/thumbnails"),
   cacheTtlMs = Number(process.env.THUMBNAIL_CACHE_TTL_MS || 86_400_000),
   sessionTtlMs = Number(process.env.THUMBNAIL_SESSION_TTL_MS || 1_800_000),
+  ffmpegPath = process.env.FFMPEG_PATH || DEFAULT_FFMPEG_PATH,
   httpClient = axios,
 } = {}) {
   const sessions = new Map();
@@ -162,15 +166,44 @@ export function createThumbnailService({
     return resolveRawUrl(rawUrl, openListBaseUrl);
   }
 
+  function sourceHeaders(rawUrl, authorization) {
+    if (!authorization) return {};
+    try {
+      return new URL(rawUrl).origin === new URL(openListBaseUrl).origin ? { Authorization: authorization } : {};
+    } catch {
+      return {};
+    }
+  }
+
+  async function fetchImageSource(rawUrl, session) {
+    let source;
+    try {
+      source = await httpClient.get(rawUrl, {
+        responseType: "stream",
+        timeout: 60_000,
+        maxRedirects: 5,
+        validateStatus: () => true,
+        headers: sourceHeaders(rawUrl, session.authorization),
+      });
+    } catch {
+      throw new Error("Could not fetch the thumbnail source.");
+    }
+    if (source.status < 200 || source.status >= 300) {
+      source.data?.destroy?.();
+      throw new Error(`Thumbnail source returned HTTP ${source.status}.`);
+    }
+    if (!source.data || typeof source.data.pipe !== "function") throw new Error("Thumbnail source did not return a readable stream.");
+    return source.data;
+  }
+
   async function generateThumbnail(session, filePath, type, cacheFile) {
     const rawUrl = await fetchRawUrl(session, filePath);
     const temporaryFile = path.join(cacheDir, `.${path.basename(cacheFile)}-${randomBytes(8).toString("hex")}.tmp`);
     try {
       if (type === "image") {
-        const source = await httpClient.get(rawUrl, { responseType: "stream", timeout: 60_000, maxRedirects: 5 });
-        await pipeline(source.data, thumbnailTransformer(), createWriteStream(temporaryFile));
+        await pipeline(await fetchImageSource(rawUrl, session), thumbnailTransformer(), createWriteStream(temporaryFile));
       } else {
-        await videoFrameToWebp(rawUrl, temporaryFile);
+        await videoFrameToWebp(rawUrl, temporaryFile, ffmpegPath);
       }
       await rename(temporaryFile, cacheFile);
     } catch (error) {
@@ -209,5 +242,5 @@ export function createThumbnailService({
     return inFlight.get(flightKey);
   }
 
-  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir };
+  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir, ffmpegPath };
 }
