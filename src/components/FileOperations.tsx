@@ -153,7 +153,7 @@ export function FolderPickerDialog({ operation, sourcePath, items, passwords, bu
     const controller = new AbortController();
     setLoading(true);
     setLoadError("");
-    listDirectory(path, passwords[path] ?? "", controller.signal)
+    listDirectory(path, passwords[path] ?? "", false, controller.signal)
       .then((data) => {
         setFolders((data.content ?? []).filter((item) => item.is_dir).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
         setWritable(data.write);

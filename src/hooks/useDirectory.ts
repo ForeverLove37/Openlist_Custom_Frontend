@@ -17,9 +17,15 @@ export function useDirectory(path: string, password: string, enabled = true) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [revision, setRevision] = useState(0);
+  const [manualRefreshCount, setManualRefreshCount] = useState(0);
   const requestId = useRef(0);
+  const forcedPath = useRef<string | null>(null);
 
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  const forceRefresh = useCallback(() => {
+    forcedPath.current = path;
+    setRevision((value) => value + 1);
+  }, [path]);
 
   useEffect(() => {
     if (!enabled) {
@@ -29,12 +35,17 @@ export function useDirectory(path: string, password: string, enabled = true) {
     }
     const controller = new AbortController();
     const id = ++requestId.current;
+    const shouldForceRefresh = forcedPath.current === path;
+    forcedPath.current = null;
     setLoading(true);
     setError(null);
 
-    listDirectory(path, password, controller.signal)
+    listDirectory(path, password, shouldForceRefresh, controller.signal)
       .then((result) => {
-        if (requestId.current === id) setData({ ...result, content: result.content ?? [] });
+        if (requestId.current === id) {
+          setData({ ...result, content: result.content ?? [] });
+          if (shouldForceRefresh) setManualRefreshCount((value) => value + 1);
+        }
       })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -49,5 +60,5 @@ export function useDirectory(path: string, password: string, enabled = true) {
     return () => controller.abort();
   }, [enabled, path, password, revision]);
 
-  return { data, loading, error, refresh };
+  return { data, loading, error, refresh, forceRefresh, manualRefreshCount };
 }

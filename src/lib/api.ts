@@ -72,12 +72,18 @@ async function request<T>(
   return payload.data;
 }
 
-export function listDirectory(path: string, password = "", signal?: AbortSignal) {
+export function listDirectory(path: string, password = "", forceRefresh = false, signal?: AbortSignal) {
   return request<DirectoryData>(
     "/fs/list",
     {
       method: "POST",
-      body: JSON.stringify({ path, password, page: 1, per_page: 0 }),
+      body: JSON.stringify({
+        path,
+        password,
+        page: 1,
+        per_page: 0,
+        ...(forceRefresh ? { refresh: true } : {}),
+      }),
     },
     signal,
   );

@@ -14,6 +14,7 @@ const resources = {
         advancedSearch: "Advanced search",
         copyLink: "Copy link",
         linkCopied: "Direct link copied.",
+        refreshedSuccessfully: "Refreshed successfully.",
       },
       settings: { language: "Language", storage: "Storage", users: "Users", native: "Native Management" },
       search: {
@@ -35,6 +36,7 @@ const resources = {
         advancedSearch: "高级搜索",
         copyLink: "复制直链",
         linkCopied: "直链已复制。",
+        refreshedSuccessfully: "刷新成功。",
       },
       settings: { language: "语言", storage: "存储", users: "用户", native: "原生管理" },
       search: {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyEntries, createUser, getFile, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
+import { copyEntries, createUser, getFile, listDirectory, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -9,6 +9,18 @@ afterEach(() => {
 });
 
 describe("OpenList API client", () => {
+  it("only sends the cache-bypass flag for an explicit directory refresh", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 200, message: "success", data: { content: [], total: 0 } }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 200, message: "success", data: { content: [], total: 0 } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await listDirectory("/Photos", "folder-password");
+    await listDirectory("/Photos", "folder-password", true);
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ path: "/Photos", password: "folder-password", page: 1, per_page: 0 });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ path: "/Photos", password: "folder-password", page: 1, per_page: 0, refresh: true });
+  });
+
   it("sends the raw authorization token and file password", async () => {
     setToken("jwt-token");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

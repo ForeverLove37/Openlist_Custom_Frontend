@@ -138,7 +138,8 @@ export default function App() {
   const uploadControllers = useRef(new Map<string, AbortController>());
   const uploadSequence = useRef(0);
   const currentPathRef = useRef(currentPath);
-  const { data, loading, error, refresh } = useDirectory(currentPath, passwords[currentPath] ?? "", appView === "files");
+  const displayedManualRefreshCount = useRef(0);
+  const { data, loading, error, refresh, forceRefresh, manualRefreshCount } = useDirectory(currentPath, passwords[currentPath] ?? "", appView === "files");
 
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
   useEffect(() => {
@@ -193,6 +194,13 @@ export default function App() {
     const timer = window.setTimeout(() => setNotice(""), 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (manualRefreshCount === 0 || manualRefreshCount === displayedManualRefreshCount.current) return;
+    displayedManualRefreshCount.current = manualRefreshCount;
+    setNoticeTone("success");
+    setNotice(t("files.refreshedSuccessfully"));
+  }, [manualRefreshCount, t]);
 
   const navigate = useCallback((path: string) => {
     const normalized = path || "/";
@@ -531,7 +539,7 @@ export default function App() {
             </div>
             <div className="browser-actions">
               {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => fileInputRef.current?.click()}><Upload size={17} /> {t("common.upload")}</button></>}
-              <button className="icon-button bordered-button" onClick={refresh} disabled={loading} title="Refresh folder"><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
+              <button className="icon-button bordered-button" onClick={forceRefresh} disabled={loading} title={t("common.refresh")} aria-label={t("common.refresh")}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
               <label className="sort-select" title="Sort files">
                 <ArrowDownAZ size={18} />
                 <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)} aria-label="Sort files by">
