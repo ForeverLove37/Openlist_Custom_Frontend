@@ -1,0 +1,150 @@
+worker_processes auto;
+pid /tmp/openlist-drive-nginx.pid;
+error_log /dev/stderr warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    server_tokens off;
+
+    access_log /dev/stdout;
+    client_body_temp_path /tmp/openlist-drive-nginx/client;
+    fastcgi_temp_path /tmp/openlist-drive-nginx/fastcgi;
+    proxy_temp_path /tmp/openlist-drive-nginx/proxy;
+    scgi_temp_path /tmp/openlist-drive-nginx/scgi;
+    uwsgi_temp_path /tmp/openlist-drive-nginx/uwsgi;
+
+    sendfile on;
+    keepalive_timeout 65;
+
+    resolver @@DNS_RESOLVER@@ ipv6=off valid=30s;
+
+    map $http_upgrade $openlist_drive_connection {
+        default upgrade;
+        "" close;
+    }
+
+    map $http_x_forwarded_proto $openlist_drive_proto {
+        default $scheme;
+        ~*^https$ https;
+    }
+
+    server {
+        listen @@GATEWAY_LISTEN_ADDRESS@@:@@GATEWAY_PORT@@;
+        server_name _;
+        client_max_body_size 0;
+
+        set $openlist_drive_upstream @@OPENLIST_UPSTREAM@@;
+        proxy_ssl_server_name on;
+        proxy_ssl_name @@OPENLIST_UPSTREAM_HOST@@;
+
+        location = /api/custom/tunnel-auth {
+            return 404;
+        }
+
+        location = /_legacy_auth {
+            internal;
+            proxy_pass http://127.0.0.1:3000/api/custom/tunnel-auth;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+            proxy_set_header Cookie $http_cookie;
+        }
+
+        location ^~ /legacy-tunnel/ {
+            auth_request /_legacy_auth;
+            auth_request_set $legacy_authorization $upstream_http_x_openlist_authorization;
+            rewrite ^/legacy-tunnel(?:/(.*))?$ /$1 break;
+            proxy_pass $openlist_drive_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header Authorization $legacy_authorization;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $openlist_drive_proto;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $openlist_drive_connection;
+            proxy_set_header Accept-Encoding "";
+            proxy_hide_header Content-Security-Policy;
+            proxy_hide_header X-Frame-Options;
+            proxy_redirect ~^(/.*)$ /legacy-tunnel$1;
+            sub_filter_once off;
+            sub_filter "cdn: ''" "cdn: '/legacy-tunnel'";
+            sub_filter "base_path: '/'" "base_path: '/legacy-tunnel/'";
+            sub_filter 'href="/manifest.json"' 'href="/legacy-tunnel/manifest.json"';
+            add_header Content-Security-Policy "frame-ancestors 'self'" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "same-origin" always;
+            proxy_buffering off;
+            proxy_read_timeout 2m;
+        }
+
+        location ^~ /api/custom/ {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $openlist_drive_proto;
+            proxy_read_timeout 2m;
+        }
+
+        location = /healthz {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+        }
+
+        location ^~ /api/ {
+            proxy_pass $openlist_drive_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $openlist_drive_proto;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $openlist_drive_connection;
+            proxy_request_buffering off;
+            proxy_read_timeout 1h;
+        }
+
+        location ~ ^/(?:d|p|ad|ap|ae|sd|sad|i)/ {
+            proxy_pass $openlist_drive_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $openlist_drive_proto;
+            proxy_set_header Range $http_range;
+            proxy_set_header If-Range $http_if_range;
+            proxy_buffering off;
+            proxy_request_buffering off;
+            proxy_read_timeout 1h;
+        }
+
+        location ^~ /assets/ {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            add_header X-Content-Type-Options "nosniff" always;
+        }
+
+        location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $openlist_drive_proto;
+            add_header Cache-Control "no-cache";
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        }
+    }
+}

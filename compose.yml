@@ -1,0 +1,57 @@
+name: openlist-drive
+
+services:
+  openlist:
+    image: "openlistteam/openlist:${OPENLIST_VERSION:-v4.2.2}"
+    restart: unless-stopped
+    user: "${OPENLIST_UID:-0}:${OPENLIST_GID:-0}"
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      UMASK: "${OPENLIST_UMASK:-022}"
+    volumes:
+      - openlist_data:/opt/openlist/data
+      - openlist_files:/opt/openlist/files
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5244/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  drive:
+    image: "${DRIVE_IMAGE:-ghcr.io/foreverlove37/openlist-custom-frontend}:${DRIVE_TAG:-latest}"
+    restart: unless-stopped
+    depends_on:
+      openlist:
+        condition: service_healthy
+    ports:
+      - "${DRIVE_BIND_IP:-127.0.0.1}:${DRIVE_PORT:-8080}:8080"
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      OPENLIST_UPSTREAM: http://openlist:5244
+      OPENLIST_API_URL: http://openlist:5244
+      THUMBNAIL_CACHE_TTL_MS: "${THUMBNAIL_CACHE_TTL_MS:-86400000}"
+      THUMBNAIL_SESSION_TTL_MS: "${THUMBNAIL_SESSION_TTL_MS:-1800000}"
+      THUMBNAIL_MAX_REDIRECTS: "${THUMBNAIL_MAX_REDIRECTS:-5}"
+      THUMBNAIL_VIDEO_SOURCE_MAX_BYTES: "${THUMBNAIL_VIDEO_SOURCE_MAX_BYTES:-268435456}"
+    volumes:
+      - drive_customization:/var/lib/openlist-drive/customization
+      - drive_thumbnails:/var/cache/openlist-drive/thumbnails
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 15s
+
+volumes:
+  openlist_data:
+  openlist_files:
+  drive_customization:
+  drive_thumbnails:

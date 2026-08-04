@@ -1,0 +1,32 @@
+name: openlist-drive-existing
+
+services:
+  drive:
+    image: "${DRIVE_IMAGE:-ghcr.io/foreverlove37/openlist-custom-frontend}:${DRIVE_TAG:-latest}"
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      GATEWAY_LISTEN_ADDRESS: "${DRIVE_BIND_IP:-127.0.0.1}"
+      GATEWAY_PORT: "${DRIVE_PORT:-8080}"
+      OPENLIST_UPSTREAM: "${OPENLIST_URL:-http://127.0.0.1:5244}"
+      OPENLIST_API_URL: "${OPENLIST_URL:-http://127.0.0.1:5244}"
+      THUMBNAIL_CACHE_TTL_MS: "${THUMBNAIL_CACHE_TTL_MS:-86400000}"
+      THUMBNAIL_SESSION_TTL_MS: "${THUMBNAIL_SESSION_TTL_MS:-1800000}"
+      THUMBNAIL_MAX_REDIRECTS: "${THUMBNAIL_MAX_REDIRECTS:-5}"
+      THUMBNAIL_VIDEO_SOURCE_MAX_BYTES: "${THUMBNAIL_VIDEO_SOURCE_MAX_BYTES:-268435456}"
+    volumes:
+      - drive_customization:/var/lib/openlist-drive/customization
+      - drive_thumbnails:/var/cache/openlist-drive/thumbnails
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 15s
+
+volumes:
+  drive_customization:
+  drive_thumbnails:
