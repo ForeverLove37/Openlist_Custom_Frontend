@@ -4,6 +4,67 @@ OpenList Drive is a React file browser with a lightweight Node.js BFF. It provid
 
 For instructions on using the deployed application, see the [OpenList Drive User Guide](docs/USER_GUIDE.md).
 
+## Docker deployment (recommended)
+
+The published image contains the React SPA, Node.js BFF, Nginx, Sharp, and FFmpeg:
+
+```bash
+docker pull ghcr.io/foreverlove37/openlist-custom-frontend:latest
+```
+
+For a new OpenList installation, download the Compose configuration and start the
+complete stack:
+
+```bash
+mkdir -p openlist-drive
+cd openlist-drive
+curl -fsSLO https://raw.githubusercontent.com/ForeverLove37/Openlist_Custom_Frontend/main/compose.yml
+curl -fsSLo .env.example https://raw.githubusercontent.com/ForeverLove37/Openlist_Custom_Frontend/main/.env.example
+cp .env.example .env
+docker compose pull
+docker compose up -d
+docker compose ps
+curl --fail http://127.0.0.1:8080/healthz
+```
+
+To keep an existing OpenList service on `127.0.0.1:5244`, use
+`compose.existing.yml` instead:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/ForeverLove37/Openlist_Custom_Frontend/main/compose.existing.yml
+docker compose -f compose.existing.yml pull
+docker compose -f compose.existing.yml up -d
+```
+
+The gateway binds to `127.0.0.1:8080` by default and is intended to sit behind a
+host HTTPS reverse proxy. See the [Docker deployment guide](DOCKER_DEPLOYMENT.md)
+for `drive.erailab.com` Nginx templates, environment variables, persistent volumes,
+upgrades, and rollback.
+
+### Build the Docker image locally
+
+Build the current source tree for the host architecture:
+
+```bash
+docker build -t openlist-custom-frontend:local .
+```
+
+Use that image with the full-stack Compose file:
+
+```bash
+DRIVE_IMAGE=openlist-custom-frontend DRIVE_TAG=local docker compose up -d
+```
+
+To build and publish a multi-architecture image after authenticating to a registry:
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag ghcr.io/your-account/openlist-custom-frontend:latest \
+  --push \
+  .
+```
+
 ## Requirements
 
 - Node.js 20 or newer
