@@ -208,7 +208,7 @@ data and customization volumes before upgrades; the thumbnail volume is disposab
 Pin release tags in `.env` for reproducible deployments:
 
 ```dotenv
-DRIVE_TAG=1.0.0
+DRIVE_TAG=1.1.1
 OPENLIST_VERSION=v4.2.2
 ```
 
@@ -227,13 +227,19 @@ is intended.
 
 The `Publish container image` GitHub Actions workflow runs for `v*` tags and manual
 dispatches. Release tags publish AMD64/ARM64 images with semantic-version, `latest`,
-and commit-SHA tags, plus provenance and an SBOM.
+and commit-SHA tags, plus provenance and an SBOM. The current published release is
+`1.1.1`; pin it for reproducible deployments:
 
-Publish the first release after this change reaches GitHub:
+```dotenv
+DRIVE_TAG=1.1.1
+OPENLIST_VERSION=v4.2.2
+```
+
+For a future release, push a new semantic-version tag:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 New GHCR packages may initially be private. In the repository/package settings,
