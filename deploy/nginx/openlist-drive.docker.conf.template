@@ -21,9 +21,8 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name @OPENLIST_DRIVE_DOMAIN@;
 
     ssl_certificate /etc/letsencrypt/live/@OPENLIST_DRIVE_CERT_NAME@/fullchain.pem;
