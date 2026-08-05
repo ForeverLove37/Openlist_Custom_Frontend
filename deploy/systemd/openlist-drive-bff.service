@@ -10,6 +10,7 @@ WorkingDirectory=/root/openlist_front/custom-frontend
 Environment=NODE_ENV=production
 Environment=OPENLIST_API_URL=http://127.0.0.1:5244
 Environment=THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
+Environment=CUSTOMIZATION_DATA_DIR=/var/lib/openlist-drive/customization
 Environment=FFMPEG_PATH=/usr/bin/ffmpeg
 Environment=THUMBNAIL_MAX_REDIRECTS=5
 Environment=THUMBNAIL_VIDEO_SOURCE_MAX_BYTES=268435456

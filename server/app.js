@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import express from "express";
+import { CustomizationError, createCustomizationService } from "./customization-service.js";
 import { RemoteStorageError, createRemoteStorageService } from "./remote-storage-service.js";
 import { ThumbnailAccessError, createThumbnailService, fallbackSvg } from "./thumbnail-service.js";
 
@@ -24,15 +25,23 @@ export function requireAdminSession(thumbnailService, id) {
   return session;
 }
 
+export function requireUserSession(thumbnailService, id) {
+  const session = thumbnailService.getSession(id);
+  if (!session.authorization || session.role === 1) throw new ThumbnailAccessError("Sign in to manage your profile.", 401);
+  return session;
+}
+
 export function createApp({
   distDir = path.resolve("dist"),
   thumbnailService = createThumbnailService(),
   remoteStorageService = createRemoteStorageService(),
+  customizationService = createCustomizationService(),
   production = process.env.NODE_ENV === "production",
 } = {}) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "8kb" }));
+  const imageBody = express.raw({ type: () => true, limit: "5mb" });
 
   const sessionId = (request) => readCookies(request.headers.cookie)[THUMBNAIL_SESSION_COOKIE];
   const sessionCookie = (response, id) => response.cookie(THUMBNAIL_SESSION_COOKIE, id, {
@@ -43,6 +52,11 @@ export function createApp({
     path: "/",
   });
   const adminSession = (request) => requireAdminSession(thumbnailService, sessionId(request));
+  const userSession = (request) => requireUserSession(thumbnailService, sessionId(request));
+  const customizationError = (response, error, fallbackMessage) => {
+    const status = error instanceof ThumbnailAccessError || error instanceof CustomizationError ? error.status : 500;
+    response.status(status).json({ code: status, message: error.message || fallbackMessage, data: null });
+  };
 
   app.post("/api/custom/session", async (request, response) => {
     try {
@@ -76,6 +90,92 @@ export function createApp({
     thumbnailService.deleteSession(sessionId(request));
     response.clearCookie(THUMBNAIL_SESSION_COOKIE, { path: "/" });
     sendEnvelope(response);
+  });
+
+  app.get("/api/custom/branding", async (_request, response) => {
+    try {
+      response.set("Cache-Control", "no-store");
+      sendEnvelope(response, await customizationService.getBranding());
+    } catch (error) {
+      customizationError(response, error, "Could not load frontend branding.");
+    }
+  });
+
+  app.get("/api/custom/branding/:kind", async (request, response) => {
+    try {
+      const kind = request.params.kind;
+      const asset = await customizationService.getBrandAssetFile(kind);
+      response.set({ "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" });
+      response.type(kind === "icon" ? "image/png" : "image/webp").sendFile(asset);
+    } catch (error) {
+      customizationError(response, error, "Could not load the branding image.");
+    }
+  });
+
+  app.put("/api/custom/admin/branding", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await customizationService.updateBranding(request.body));
+    } catch (error) {
+      customizationError(response, error, "Could not update frontend branding.");
+    }
+  });
+
+  app.put("/api/custom/admin/branding/:kind", imageBody, async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await customizationService.saveBrandAsset(request.params.kind, request.body, request.get("Content-Type") || ""));
+    } catch (error) {
+      customizationError(response, error, "Could not update the branding image.");
+    }
+  });
+
+  app.delete("/api/custom/admin/branding/:kind", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await customizationService.deleteBrandAsset(request.params.kind));
+    } catch (error) {
+      customizationError(response, error, "Could not remove the branding image.");
+    }
+  });
+
+  app.get("/api/custom/profile", async (request, response) => {
+    try {
+      const session = userSession(request);
+      response.set({ "Cache-Control": "no-store", "Vary": "Cookie" });
+      sendEnvelope(response, await customizationService.getProfile(session.userId));
+    } catch (error) {
+      customizationError(response, error, "Could not load your profile.");
+    }
+  });
+
+  app.get("/api/custom/profile/avatar", async (request, response) => {
+    try {
+      const session = userSession(request);
+      const avatar = await customizationService.getAvatarFile(session.userId);
+      response.set({ "Cache-Control": "private, max-age=31536000, immutable", "Vary": "Cookie", "X-Content-Type-Options": "nosniff" });
+      response.type("image/webp").sendFile(avatar);
+    } catch (error) {
+      customizationError(response, error, "Could not load your avatar.");
+    }
+  });
+
+  app.put("/api/custom/profile/avatar", imageBody, async (request, response) => {
+    try {
+      const session = userSession(request);
+      sendEnvelope(response, await customizationService.saveAvatar(session.userId, request.body, request.get("Content-Type") || ""));
+    } catch (error) {
+      customizationError(response, error, "Could not update your avatar.");
+    }
+  });
+
+  app.delete("/api/custom/profile/avatar", async (request, response) => {
+    try {
+      const session = userSession(request);
+      sendEnvelope(response, await customizationService.deleteAvatar(session.userId));
+    } catch (error) {
+      customizationError(response, error, "Could not remove your avatar.");
+    }
   });
 
   app.get("/api/custom/tunnel-auth", (request, response) => {
@@ -131,6 +231,15 @@ export function createApp({
       response.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
       response.type("image/svg+xml").status(200).send(fallbackSvg(type));
     }
+  });
+
+  app.use((error, request, response, next) => {
+    if (!request.path.startsWith("/api/custom/")) {
+      next(error);
+      return;
+    }
+    const status = error?.type === "entity.too.large" ? 413 : 400;
+    response.status(status).json({ code: status, message: status === 413 ? "Images must be 5 MB or smaller." : "The request body is invalid.", data: null });
   });
 
   app.get("/healthz", async (_request, response) => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   ArrowDownAZ,
   ChevronDown,
@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  ShieldCheck,
   ShieldAlert,
   SlidersHorizontal,
   Upload,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AdvancedSearch } from "./components/AdvancedSearch";
+import { BrandingManagement } from "./components/BrandingManagement";
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
 import {
@@ -37,10 +39,12 @@ import {
   type FileOperationPermissions,
 } from "./components/FileOperations";
 import { Gallery } from "./components/Gallery";
-import { LanguageSelector } from "./components/LanguageSelector";
 import { NativeManagement } from "./components/NativeManagement";
 import { StorageManagement } from "./components/StorageManagement";
+import { UserAvatar } from "./components/UserAvatar";
 import { UserManagement } from "./components/UserManagement";
+import type { SettingsSection } from "./components/UserSettingsDialog";
+import { UploadDialog } from "./components/UploadDialog";
 import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
 import { VideoModal } from "./components/VideoModal";
 import {
@@ -49,7 +53,9 @@ import {
   copyEntries,
   getCurrentUser,
   getFile,
+  getFrontendBranding,
   getToken,
+  getUserProfile,
   login,
   logout,
   moveEntries,
@@ -66,24 +72,32 @@ import {
   locationFromDirectoryPath,
   sortItems,
 } from "./lib/files";
-import type { OpenListItem, OpenListUser, SortDirection, SortKey, ViewMode } from "./lib/types";
+import { applyTheme, readStoredTheme, type ThemePreset } from "./lib/theme";
+import type { FrontendBranding, OpenListItem, OpenListUser, SortDirection, SortKey, UserProfile, ViewMode } from "./lib/types";
 import { useDirectory } from "./hooks/useDirectory";
 
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
-type AppView = "files" | "storages" | "users" | "native";
+type AppView = "files" | "storages" | "users" | "branding" | "native";
 
 const ADMIN_ROLE = 2;
+const DEFAULT_BRANDING: FrontendBranding = { name: "OpenList Drive", logoUrl: "", iconUrl: "" };
+const EMPTY_PROFILE: UserProfile = { avatarUrl: "" };
+const UserSettingsDialog = lazy(async () => {
+  const settings = await import("./components/UserSettingsDialog");
+  return { default: settings.UserSettingsDialog };
+});
 
 function viewFromLocation(): AppView {
   if (window.location.pathname === "/admin/storages") return "storages";
   if (window.location.pathname === "/admin/users") return "users";
+  if (window.location.pathname === "/admin/branding") return "branding";
   if (window.location.pathname === "/admin/native") return "native";
   return "files";
 }
 
 function isAdminView(view: AppView) {
-  return view === "storages" || view === "users" || view === "native";
+  return view === "storages" || view === "users" || view === "branding" || view === "native";
 }
 
 async function copyToClipboard(value: string) {
@@ -127,13 +141,18 @@ export default function App() {
   const [userResolved, setUserResolved] = useState(false);
   const [thumbnailSessionReady, setThumbnailSessionReady] = useState(false);
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
-  const [dragActive, setDragActive] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set());
   const [actionMenu, setActionMenu] = useState<{ x: number; y: number } | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [operationBusy, setOperationBusy] = useState(false);
   const [operationError, setOperationError] = useState("");
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
+  const [branding, setBranding] = useState<FrontendBranding>(DEFAULT_BRANDING);
+  const [profile, setProfile] = useState<UserProfile>(EMPTY_PROFILE);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("profile");
+  const [theme, setTheme] = useState<ThemePreset>(readStoredTheme);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadControllers = useRef(new Map<string, AbortController>());
   const uploadSequence = useRef(0);
@@ -164,6 +183,23 @@ export default function App() {
 
   useEffect(loadUser, [loadUser]);
 
+  useEffect(() => applyTheme(theme), [theme]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getFrontendBranding(controller.signal).then(setBranding).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    document.title = branding.name;
+    const favicon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+    if (favicon) {
+      favicon.href = branding.iconUrl || "/favicon.svg";
+      favicon.type = branding.iconUrl ? "image/png" : "image/svg+xml";
+    }
+  }, [branding]);
+
   useEffect(() => {
     if (!userResolved) return;
     let active = true;
@@ -173,6 +209,16 @@ export default function App() {
       .catch(() => { if (active) setThumbnailSessionReady(false); });
     return () => { active = false; };
   }, [currentPath, passwords, user?.id, userResolved]);
+
+  useEffect(() => {
+    if (!thumbnailSessionReady || !user || !getToken()) {
+      setProfile(EMPTY_PROFILE);
+      return;
+    }
+    const controller = new AbortController();
+    void getUserProfile(controller.signal).then(setProfile).catch(() => setProfile(EMPTY_PROFILE));
+    return () => controller.abort();
+  }, [thumbnailSessionReady, user]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -216,10 +262,17 @@ export default function App() {
     const routes: Record<Exclude<AppView, "files">, string> = {
       storages: "/admin/storages",
       users: "/admin/users",
+      branding: "/admin/branding",
       native: "/admin/native",
     };
     window.history.pushState({}, "", routes[view]);
     setAppView(view);
+    setSidebarOpen(false);
+  }, []);
+
+  const openSettings = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
     setSidebarOpen(false);
   }, []);
 
@@ -420,23 +473,12 @@ export default function App() {
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) enqueueUploads(event.target.files);
     event.target.value = "";
+    setUploadDialogOpen(false);
   };
-  const onDragEnter = (event: DragEvent<HTMLElement>) => {
-    if (!canUpload || !Array.from(event.dataTransfer.types).includes("Files")) return;
-    event.preventDefault();
-    setDragActive(true);
-  };
-  const onDragOver = (event: DragEvent<HTMLElement>) => {
-    if (!canUpload) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  };
-  const onDrop = (event: DragEvent<HTMLElement>) => {
-    if (!canUpload) return;
-    event.preventDefault();
-    setDragActive(false);
-    if (event.dataTransfer.files.length) enqueueUploads(event.dataTransfer.files);
-  };
+  const onDialogFiles = useCallback((files: FileList) => {
+    enqueueUploads(files);
+    setUploadDialogOpen(false);
+  }, [enqueueUploads]);
 
   const submitLogin = async (username: string, password: string, otp: string) => {
     setLoginBusy(true);
@@ -467,6 +509,8 @@ export default function App() {
     setToken("");
     setUser(null);
     setUserResolved(true);
+    setProfile(EMPTY_PROFILE);
+    setSettingsOpen(false);
     navigate("/");
     refresh();
   };
@@ -479,25 +523,26 @@ export default function App() {
     <div className="app-shell">
       <header className="mobile-header">
         <button className="icon-button" onClick={() => setSidebarOpen(true)} title="Open navigation"><Menu size={22} /></button>
-        <button className="brand brand--mobile" onClick={() => navigate("/")}><BrandMark /><span>OpenList</span></button>
-        <UserButton user={user} isSignedIn={isSignedIn} onLogin={() => setLoginOpen(true)} onLogout={signOut} compact />
+        <button className="brand brand--mobile" onClick={() => navigate("/")}><BrandMark branding={branding} /><span>{branding.name}</span></button>
+        <UserButton user={user} avatarUrl={profile.avatarUrl} isSignedIn={isSignedIn} onLogin={() => setLoginOpen(true)} onLogout={signOut} onSettings={() => openSettings("profile")} compact />
       </header>
 
       <aside className={`sidebar${sidebarOpen ? " sidebar--open" : ""}`}>
         <div className="sidebar__top">
-          <button className="brand" onClick={() => navigate("/")}><BrandMark /><span>OpenList</span></button>
+          <button className="brand" onClick={() => navigate("/")}><BrandMark branding={branding} /><span>{branding.name}</span></button>
           <button className="icon-button sidebar__close" onClick={() => setSidebarOpen(false)} title="Close navigation"><X size={20} /></button>
         </div>
         <nav className="sidebar__nav" aria-label="Main navigation">
           <button className={`nav-item${appView === "files" ? " nav-item--active" : ""}`} onClick={() => navigate("/")}><HardDrive size={20} /><span>{t("nav.files")}</span></button>
-          {user?.role === ADMIN_ROLE && <button className={`nav-item${isAdminView(appView) ? " nav-item--active" : ""}`} onClick={() => navigateToAdmin("storages")}><Settings2 size={20} /><span>{t("nav.settings")}</span></button>}
+          <button className="nav-item" onClick={() => openSettings(isSignedIn ? "profile" : "appearance")}><Settings2 size={20} /><span>{t("nav.settings")}</span></button>
+          {user?.role === ADMIN_ROLE && <button className={`nav-item${isAdminView(appView) ? " nav-item--active" : ""}`} onClick={() => navigateToAdmin("storages")}><ShieldCheck size={20} /><span>{t("nav.administration")}</span></button>}
         </nav>
         <div className="storage-summary">
           <div className="storage-summary__title"><Cloud size={18} /><strong>OpenList storage</strong></div>
           <p>Files are streamed directly from your connected storage.</p>
         </div>
         <div className="sidebar__account">
-          <UserButton user={user} isSignedIn={isSignedIn} onLogin={() => setLoginOpen(true)} onLogout={signOut} />
+          <UserButton user={user} avatarUrl={profile.avatarUrl} isSignedIn={isSignedIn} onLogin={() => setLoginOpen(true)} onLogout={signOut} onSettings={() => openSettings("profile")} />
         </div>
       </aside>
       {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
@@ -525,20 +570,20 @@ export default function App() {
           ) : (
             <nav className="breadcrumbs" aria-label="Breadcrumb">
               <button onClick={() => navigate("/")} title={t("nav.files")}><HardDrive size={19} /><span>{t("nav.files")}</span></button>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>{t("nav.settings")}</button></span>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "native" ? t("settings.native") : t("settings.storage")}</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>{t("nav.administration")}</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "branding" ? t("settings.branding") : appView === "native" ? t("settings.native") : t("settings.storage")}</button></span>
             </nav>
           )}
         </div>
 
-        {appView === "files" ? <section className={`browser-section${dragActive ? " browser-section--drop-active" : ""}`} aria-labelledby="folder-title" onDragEnter={onDragEnter} onDragOver={onDragOver} onDragLeave={(event) => { if (event.currentTarget === event.target) setDragActive(false); }} onDrop={onDrop}>
+        {appView === "files" ? <section className="browser-section" aria-labelledby="folder-title">
           <div className="browser-heading">
             <div>
               <h1 id="folder-title">{currentName}</h1>
               <p>{loading ? "Loading files" : `${data.total} ${data.total === 1 ? "item" : "items"}`}{data.provider && data.provider !== "unknown" ? ` · ${data.provider}` : ""}</p>
             </div>
             <div className="browser-actions">
-              {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => fileInputRef.current?.click()}><Upload size={17} /> {t("common.upload")}</button></>}
+              {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={17} /> {t("common.upload")}</button></>}
               <button className="icon-button bordered-button" onClick={forceRefresh} disabled={loading} title={t("common.refresh")} aria-label={t("common.refresh")}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
               <label className="sort-select" title="Sort files">
                 <ArrowDownAZ size={18} />
@@ -591,7 +636,6 @@ export default function App() {
           )}
 
           {data.readme && !loading && <div className="folder-readme"><h2>About this folder</h2><p>{data.readme}</p></div>}
-          {dragActive && <div className="file-drop-target" aria-hidden="true"><Upload size={34} /><strong>Drop files to upload</strong><span>{currentPath}</span></div>}
         </section> : (
           <AdminStorageGate
             user={user}
@@ -602,6 +646,8 @@ export default function App() {
             view={appView}
             onSelectView={navigateToAdmin}
             thumbnailSessionReady={thumbnailSessionReady}
+            branding={branding}
+            onBrandingUpdated={setBranding}
           />
         )}
       </main>
@@ -609,6 +655,7 @@ export default function App() {
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
       {video && <VideoModal {...video} onClose={() => setVideo(null)} />}
       {advancedSearchOpen && <AdvancedSearch initialLocation={currentPath} passwordForPath={(path) => passwords[path] ?? ""} onClose={() => setAdvancedSearchOpen(false)} onNavigate={navigate} />}
+      {uploadDialogOpen && canUpload && <UploadDialog path={currentPath} onClose={() => setUploadDialogOpen(false)} onFiles={onDialogFiles} onBrowse={() => fileInputRef.current?.click()} />}
       {mediaLoading && <div className="media-loading" role="status"><LoaderCircle className="spin" size={21} /><span>Preparing {mediaLoading}</span></div>}
       {notice && <div className={`toast${noticeTone === "success" ? " toast--success" : ""}${uploads.length ? " toast--with-uploads" : ""}`} role={noticeTone === "error" ? "alert" : "status"}>{noticeTone === "success" ? <CheckCircle2 size={19} /> : <ShieldAlert size={19} />}<span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
       <UploadQueue uploads={uploads} onCancel={cancelUpload} onDismiss={dismissUpload} onClearCompleted={clearCompletedUploads} />
@@ -618,29 +665,34 @@ export default function App() {
       {(fileOperation === "copy" || fileOperation === "move") && selectedItems.length > 0 && <FolderPickerDialog operation={fileOperation} sourcePath={currentPath} items={selectedItems} passwords={passwords} busy={operationBusy} operationError={operationError} onClose={closeFileOperation} onConfirm={(destination) => void runFileOperation(fileOperation, destination)} />}
       {loginOpen && <LoginDialog busy={loginBusy} error={loginError} needsOtp={needsOtp} onClose={() => { setLoginOpen(false); setLoginError(""); }} onSubmit={submitLogin} />}
       {passwordOpen && <PasswordDialog path={currentPath} onClose={() => setPasswordOpen(false)} onSubmit={(password) => { setPasswords((value) => ({ ...value, [currentPath]: password })); setPasswordOpen(false); }} />}
+      {settingsOpen && <Suspense fallback={<div className="dialog-backdrop"><div className="settings-loading" role="status"><LoaderCircle className="spin" size={23} /><span>{t("settings.loading")}</span></div></div>}><UserSettingsDialog user={isSignedIn ? user : null} profile={profile} theme={theme} initialSection={settingsSection} onThemeChange={setTheme} onProfileUpdated={(updated) => { setProfile(updated); setNoticeTone("success"); setNotice(t("profile.updated")); }} onLogin={() => { setSettingsOpen(false); setLoginOpen(true); }} onLogout={() => void signOut()} onClose={() => setSettingsOpen(false)} /></Suspense>}
     </div>
   );
 }
 
-function BrandMark() {
-  return <span className="brand-mark"><Files size={22} strokeWidth={2.2} /></span>;
+function BrandMark({ branding }: { branding: FrontendBranding }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [branding.logoUrl]);
+  return <span className={`brand-mark${branding.logoUrl && !failed ? " brand-mark--image" : ""}`}>{branding.logoUrl && !failed ? <img src={branding.logoUrl} alt="" onError={() => setFailed(true)} /> : <Files size={22} strokeWidth={2.2} />}</span>;
 }
 
 interface UserButtonProps {
   user: OpenListUser | null;
+  avatarUrl: string;
   isSignedIn: boolean;
   onLogin: () => void;
   onLogout: () => void;
+  onSettings: () => void;
   compact?: boolean;
 }
 
-function UserButton({ user, isSignedIn, onLogin, onLogout, compact = false }: UserButtonProps) {
+function UserButton({ user, avatarUrl, isSignedIn, onLogin, onLogout, onSettings, compact = false }: UserButtonProps) {
   if (compact) {
-    return <button className="icon-button mobile-account" onClick={isSignedIn ? onLogout : onLogin} title={isSignedIn ? "Sign out" : "Sign in"}><CircleUserRound size={22} /></button>;
+    return <button className="icon-button mobile-account" onClick={isSignedIn ? onSettings : onLogin} title={isSignedIn ? "Settings" : "Sign in"}>{isSignedIn ? <UserAvatar avatarUrl={avatarUrl} username={user?.username} compact /> : <CircleUserRound size={22} />}</button>;
   }
   return isSignedIn ? (
     <div className="account-row">
-      <span className="account-avatar">{user?.username?.slice(0, 1).toUpperCase() || "U"}</span>
+      <button className="account-avatar-button" onClick={onSettings} title="Settings"><UserAvatar avatarUrl={avatarUrl} username={user?.username} /></button>
       <span className="account-copy"><strong>{user?.username || "OpenList user"}</strong><small>Signed in</small></span>
       <button className="icon-button" onClick={onLogout} title="Sign out"><LogOut size={18} /></button>
     </div>
@@ -675,6 +727,8 @@ function AdminStorageGate({
   view,
   onSelectView,
   thumbnailSessionReady,
+  branding,
+  onBrandingUpdated,
 }: {
   user: OpenListUser | null;
   resolved: boolean;
@@ -684,6 +738,8 @@ function AdminStorageGate({
   view: Exclude<AppView, "files">;
   onSelectView: (view: Exclude<AppView, "files">) => void;
   thumbnailSessionReady: boolean;
+  branding: FrontendBranding;
+  onBrandingUpdated: (branding: FrontendBranding) => void;
 }) {
   const { t } = useTranslation();
   if (!resolved) {
@@ -708,5 +764,5 @@ function AdminStorageGate({
       </div>
     );
   }
-  return <><nav className="admin-tabs" aria-label={t("nav.settings")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button><LanguageSelector /></nav>{view === "users" ? <UserManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
+  return <><nav className="admin-tabs" aria-label={t("nav.administration")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "branding" ? "active" : ""} onClick={() => onSelectView("branding")} aria-current={view === "branding" ? "page" : undefined}>{t("settings.branding")}</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button></nav>{view === "users" ? <UserManagement /> : view === "branding" ? <BrandingManagement branding={branding} onUpdated={onBrandingUpdated} /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
 }

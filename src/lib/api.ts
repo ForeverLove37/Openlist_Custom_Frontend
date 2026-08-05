@@ -2,6 +2,7 @@ import type {
   ApiEnvelope,
   DirectoryData,
   FileDetail,
+  FrontendBranding,
   LoginResult,
   ManagedUser,
   OpenListStorage,
@@ -9,6 +10,8 @@ import type {
   SearchPage,
   SearchRequest,
   StoragePage,
+  BrandingAssetKind,
+  UserProfile,
   UserPage,
 } from "./types";
 
@@ -232,6 +235,59 @@ export function syncThumbnailSession(path: string, password = "") {
 
 export function clearThumbnailSession() {
   return request<unknown>("/custom/session/clear", { method: "POST" });
+}
+
+export function getFrontendBranding(signal?: AbortSignal) {
+  return request<FrontendBranding>("/custom/branding", {}, signal);
+}
+
+export function updateFrontendBranding(name: string) {
+  return request<FrontendBranding>("/custom/admin/branding", {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+async function uploadCustomImage<T>(endpoint: string, file: File) {
+  const headers = new Headers({ Accept: "application/json", "Content-Type": file.type });
+  const token = getToken();
+  if (token) headers.set("Authorization", token);
+  let response: Response;
+  try {
+    response = await fetch(`/api${endpoint}`, { method: "PUT", headers, body: file });
+  } catch {
+    throw new ApiError("Could not reach the OpenList server.", 0);
+  }
+  let payload: ApiEnvelope<T>;
+  try {
+    payload = (await response.json()) as ApiEnvelope<T>;
+  } catch {
+    throw new ApiError("The server returned an invalid response.", response.status);
+  }
+  if (!response.ok || payload.code !== 200) {
+    throw new ApiError(payload.message || "Image upload failed.", response.ok ? payload.code : response.status, payload.code, payload.data);
+  }
+  return payload.data;
+}
+
+export function uploadBrandingAsset(kind: BrandingAssetKind, file: File) {
+  return uploadCustomImage<FrontendBranding>(`/custom/admin/branding/${kind}`, file);
+}
+
+export function deleteBrandingAsset(kind: BrandingAssetKind) {
+  return request<FrontendBranding>(`/custom/admin/branding/${kind}`, { method: "DELETE" });
+}
+
+export function getUserProfile(signal?: AbortSignal) {
+  return request<UserProfile>("/custom/profile", {}, signal);
+}
+
+export function uploadUserAvatar(file: File) {
+  return uploadCustomImage<UserProfile>("/custom/profile/avatar", file);
+}
+
+export function deleteUserAvatar() {
+  return request<UserProfile>("/custom/profile/avatar", { method: "DELETE" });
 }
 
 interface UploadOptions {

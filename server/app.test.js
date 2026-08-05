@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { requireAdminSession } from "./app.js";
+import { requireAdminSession, requireUserSession } from "./app.js";
 import { ThumbnailAccessError } from "./thumbnail-service.js";
 
 describe("BFF admin session boundary", () => {
@@ -8,6 +8,17 @@ describe("BFF admin session boundary", () => {
     const thumbnailService = { getSession: vi.fn().mockReturnValue(session) };
     expect(requireAdminSession(thumbnailService, "session-id")).toBe(session);
     expect(thumbnailService.getSession).toHaveBeenCalledWith("session-id");
+  });
+
+  it("allows signed-in users to manage only their session-owned profile", () => {
+    const session = { id: "session-id", userId: 9, role: 0, authorization: "verified-user-token" };
+    const thumbnailService = { getSession: vi.fn().mockReturnValue(session) };
+    expect(requireUserSession(thumbnailService, "session-id")).toBe(session);
+  });
+
+  it("rejects guest sessions for profile writes", () => {
+    const thumbnailService = { getSession: vi.fn().mockReturnValue({ userId: 1, role: 1, authorization: "" }) };
+    expect(() => requireUserSession(thumbnailService, "guest-session")).toThrow("Sign in to manage your profile");
   });
 
   it("rejects a verified non-administrator session", () => {

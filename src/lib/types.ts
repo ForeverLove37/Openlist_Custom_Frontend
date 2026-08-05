@@ -89,6 +89,18 @@ export interface LoginResult {
   token: string;
 }
 
+export interface FrontendBranding {
+  name: string;
+  logoUrl: string;
+  iconUrl: string;
+}
+
+export interface UserProfile {
+  avatarUrl: string;
+}
+
+export type BrandingAssetKind = "logo" | "icon";
+
 export type StorageDriver = "Local" | "WebDav" | "OpenList" | "AList V3";
 
 export interface OpenListStorage {

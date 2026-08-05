@@ -24,10 +24,26 @@ cp .env.example .env
 docker compose pull
 docker compose up -d
 docker compose ps
+# Replace 8080 with the DRIVE_PORT value from .env when customized.
 curl --fail http://127.0.0.1:8080/healthz
 ```
 
-To keep an existing OpenList service on `127.0.0.1:5244`, use
+The sample uses host port `8080` for the gateway and host port `5244` for the
+loopback-only OpenList mapping. Change them in `.env` without editing Compose:
+
+```dotenv
+DRIVE_PORT=18080
+DRIVE_CONTAINER_PORT=8180
+OPENLIST_HOST_PORT=15244
+OPENLIST_HTTP_PORT=6244
+```
+
+`*_PORT` values ending in `HOST_PORT` or `DRIVE_PORT` are host-side ports;
+`DRIVE_CONTAINER_PORT` and `OPENLIST_HTTP_PORT` are container listener ports. The
+health check and internal BFF URL update automatically. Update the host Nginx
+`proxy_pass` port when changing `DRIVE_PORT`.
+
+To keep an existing OpenList service on a custom URL instead of starting one, use
 `compose.existing.yml` instead:
 
 ```bash
@@ -37,9 +53,9 @@ docker compose -f compose.existing.yml up -d
 ```
 
 The gateway binds to `127.0.0.1:8080` by default and is intended to sit behind a
-host HTTPS reverse proxy. See the [Docker deployment guide](DOCKER_DEPLOYMENT.md)
-for `drive.erailab.com` Nginx templates, environment variables, persistent volumes,
-upgrades, and rollback.
+host HTTPS reverse proxy. Both host mappings are configurable; see the [Docker
+deployment guide](DOCKER_DEPLOYMENT.md) for the complete port matrix, `drive.erailab.com`
+Nginx templates, environment variables, persistent volumes, upgrades, and rollback.
 
 ### Build the Docker image locally
 
@@ -68,7 +84,7 @@ docker buildx build \
 ## Requirements
 
 - Node.js 20 or newer
-- An OpenList backend reachable at `http://127.0.0.1:5244`
+- An OpenList backend reachable at the URL configured in `OPENLIST_URL` (default `http://127.0.0.1:5244`)
 - Nginx for production deployment
 - `ffmpeg` for video thumbnails (the production unit defaults to `/usr/bin/ffmpeg`; override with `FFMPEG_PATH` if needed)
 
@@ -108,16 +124,18 @@ The production output is written to `dist/`. `npm start` serves that directory a
 
 ## Production
 
-The BFF serves both `dist/` and `/api/custom/*` from port `3000`. It stores generated WebP thumbnails in `.cache/thumbnails` by default. For a durable system cache, use a dedicated directory:
+The BFF serves both `dist/` and `/api/custom/*` from port `3000`. It stores generated WebP thumbnails in `.cache/thumbnails` by default. User avatars and administrator-managed frontend branding are stored in `.data/customization` by default. For durable system data, use dedicated directories:
 
 ```bash
 cd /root/openlist_front/custom-frontend
 npm ci
 npm run build
 sudo install -d -o root -g root -m 0755 /var/cache/openlist-drive/thumbnails
+sudo install -d -o root -g root -m 0750 /var/lib/openlist-drive/customization
 export NODE_ENV=production
 export OPENLIST_API_URL=http://127.0.0.1:5244
 export THUMBNAIL_CACHE_DIR=/var/cache/openlist-drive/thumbnails
+export CUSTOMIZATION_DATA_DIR=/var/lib/openlist-drive/customization
 export FFMPEG_PATH=/usr/bin/ffmpeg
 export THUMBNAIL_MAX_REDIRECTS=5
 export THUMBNAIL_VIDEO_SOURCE_MAX_BYTES=268435456
@@ -157,15 +175,19 @@ ports:
 
 Recreate the container after changing Compose. The Nginx templates in `deploy/nginx/` proxy `/api/custom/`, SPA routes, and static assets to the BFF, while `/api/` continues to route to OpenList. They also provide an admin-only `/legacy-tunnel/` for the iframe-based native management panel. Tunnel authorization uses the short-lived HTTP-only BFF session; Nginx injects the verified admin token into upstream OpenList requests, and the public tunnel-auth endpoint is explicitly blocked.
 
-Install the appropriate template, validate it, and reload:
+Install the HTTP template first when issuing a certificate for a new hostname. Then request the certificate, install the HTTPS template, validate it, and reload:
 
 ```bash
-sudo install -m 0644 deploy/nginx/test.erailab.com.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
+sudo install -m 0644 deploy/nginx/drive.erailab.com.http.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
+sudo nginx -t
+sudo nginx -s reload
+sudo certbot certonly --webroot -w /var/www/certbot -d drive.erailab.com
+sudo install -m 0644 deploy/nginx/drive.erailab.com.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
 sudo nginx -t
 sudo nginx -s reload
 ```
 
-Use `test.erailab.com.http.conf` only before the initial TLS certificate exists. It has the same BFF proxy arrangement and retains the Certbot webroot location.
+`drive.erailab.com.http.conf` retains the same BFF proxy arrangement and Certbot webroot location, and is intended only for the initial certificate request or recovery.
 
 The browser creates a short-lived, HTTP-only BFF session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. The same server-side session authorizes the native management tunnel and nested remote-storage controls for administrator accounts. Remote connection tokens are read from the local OpenList configuration by the BFF and are never returned to the browser.
 

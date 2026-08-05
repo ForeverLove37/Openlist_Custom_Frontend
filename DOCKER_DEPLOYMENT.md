@@ -21,9 +21,10 @@ cookies in production, so the public application should be accessed over HTTPS.
 - A dedicated hostname pointing to the server
 - Host Nginx and Certbot for public HTTPS
 
-The default gateway address is `127.0.0.1:8080`. OpenList is not published from
-the full-stack Compose project, so neither service can be bypassed from the public
-network.
+The default gateway mapping is `127.0.0.1:8080` on the host to port `8080` in the
+container. The full-stack file also maps OpenList's loopback-only host port `5244`
+to its container port `5244`. These are defaults, not requirements: both host ports
+and the two internal HTTP ports can be changed in `.env`.
 
 ## Full-stack installation
 
@@ -37,12 +38,31 @@ curl -fsSLo .env.example https://raw.githubusercontent.com/ForeverLove37/Openlis
 cp .env.example .env
 ```
 
+For example, this uses different host and container ports while keeping both
+services private to the host:
+
+```dotenv
+DRIVE_BIND_IP=127.0.0.1
+DRIVE_PORT=18080
+DRIVE_CONTAINER_PORT=8180
+OPENLIST_BIND_IP=127.0.0.1
+OPENLIST_HOST_PORT=15244
+OPENLIST_HTTP_PORT=6244
+```
+
+`DRIVE_PORT` and `OPENLIST_HOST_PORT` are host-side ports. `DRIVE_CONTAINER_PORT`
+and `OPENLIST_HTTP_PORT` change the ports that the gateway and OpenList listen on
+inside their containers; the Compose health check and BFF upstream follow those
+values automatically. Keep `OPENLIST_BIND_IP` and `DRIVE_BIND_IP` on `127.0.0.1`
+when host Nginx is the public entry point.
+
 Review `.env`, then start both services:
 
 ```bash
 docker compose pull
 docker compose up -d
 docker compose ps
+# Replace 8080 with the DRIVE_PORT value from .env when customized.
 curl --fail http://127.0.0.1:8080/healthz
 ```
 
@@ -60,8 +80,8 @@ root. That directory is backed by the `openlist_files` volume.
 ## Connect to an existing OpenList
 
 `compose.existing.yml` uses host networking so it can reach an OpenList service
-bound securely to `127.0.0.1:5244`. Create a deployment directory and download
-the existing-backend configuration:
+through any URL reachable from the host. Create a deployment directory and
+download the existing-backend configuration:
 
 ```bash
 mkdir -p openlist-drive
@@ -79,6 +99,10 @@ DRIVE_BIND_IP=127.0.0.1
 DRIVE_PORT=8080
 ```
 
+Change `OPENLIST_URL` to the actual host, port, or HTTPS origin of the existing
+backend. `DRIVE_PORT` is the host port on which the gateway listens; in host-network
+mode there is no separate container-side port mapping.
+
 If this host previously ran the BFF as a systemd service, stop it before starting
 the container because both processes use loopback port `3000`:
 
@@ -94,6 +118,7 @@ Start only the gateway:
 docker compose -f compose.existing.yml pull
 docker compose -f compose.existing.yml up -d
 docker compose -f compose.existing.yml ps
+# Replace 8080 with the DRIVE_PORT value from .env when customized.
 curl --fail http://127.0.0.1:8080/healthz
 ```
 
@@ -110,8 +135,14 @@ isolated Compose network.
 | `DRIVE_IMAGE` | `ghcr.io/foreverlove37/openlist-custom-frontend` | Published gateway repository |
 | `DRIVE_TAG` | `latest` | Gateway release or rollback tag |
 | `DRIVE_BIND_IP` | `127.0.0.1` | Host-side gateway bind address |
-| `DRIVE_PORT` | `8080` | Host gateway port |
+| `DRIVE_PORT` | `8080` | Host-side gateway port |
+| `DRIVE_CONTAINER_PORT` | `8080` | Gateway container listen port in `compose.yml` |
 | `OPENLIST_VERSION` | `v4.2.2` | OpenList tag used by `compose.yml` |
+| `OPENLIST_BIND_IP` | `127.0.0.1` | Host bind address for the full-stack OpenList mapping |
+| `OPENLIST_HOST_PORT` | `5244` | Host-side OpenList HTTP port |
+| `OPENLIST_LISTEN_ADDRESS` | `0.0.0.0` | OpenList container listen address |
+| `OPENLIST_HTTP_PORT` | `5244` | OpenList container HTTP port |
+| `OPENLIST_HTTPS_PORT` | `-1` | OpenList HTTPS port; `-1` disables it |
 | `OPENLIST_URL` | `http://127.0.0.1:5244` | Backend used by `compose.existing.yml` |
 | `THUMBNAIL_CACHE_TTL_MS` | `86400000` | Generated thumbnail lifetime |
 | `THUMBNAIL_SESSION_TTL_MS` | `1800000` | BFF browser-session lifetime |
@@ -151,11 +182,16 @@ certificate paths. If `DRIVE_PORT` is changed, update the `proxy_pass` port in t
 HTTPS template. The template disables request buffering and permits unlimited body
 size so large file uploads and media ranges remain streamable.
 
-Confirm that the gateway remains loopback-only and that OpenList has no public port:
+Confirm that the configured gateway and OpenList host ports remain loopback-only:
 
 ```bash
-ss -ltnp | grep -E ':(8080|5244)\b'
+ss -ltnp
 ```
+
+The listening ports should match `DRIVE_BIND_IP:DRIVE_PORT` and
+`OPENLIST_BIND_IP:OPENLIST_HOST_PORT` from `.env`. If you change `DRIVE_PORT`, also
+change the `proxy_pass` port in the Docker Nginx template before reloading host
+Nginx.
 
 ## Persistence, upgrades, and rollback
 

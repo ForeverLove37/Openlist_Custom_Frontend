@@ -2,7 +2,7 @@
 
 OpenList Drive is a browser-based file manager for viewing, downloading, and (when permitted) uploading files stored in OpenList. Open the application at:
 
-**https://test.erailab.com**
+**https://drive.erailab.com**
 
 ## Sign in
 
@@ -11,9 +11,17 @@ OpenList Drive is a browser-based file manager for viewing, downloading, and (wh
 3. Select **Sign in**.
 4. If two-factor authentication is enabled, enter the verification code from your authenticator application and submit the form again.
 
-After a successful sign-in, your username appears in the sidebar. To end the session, select the sign-out icon beside your username. On a phone, select the account icon again.
+After a successful sign-in, your username appears in the sidebar. Select your avatar to open the Profile tab in Settings, or select the sign-out icon beside your username to end the session. On a phone, select the avatar in the top-right corner to open Settings.
 
 If guest access is enabled by the OpenList administrator, public files can be browsed without signing in.
+
+## Change your avatar
+
+1. Sign in, then select your avatar in the sidebar or mobile header. You can also select **Settings**, then **Profile**.
+2. Select **Choose avatar** or **Replace avatar** and choose a PNG, JPEG, WebP, or GIF image up to 5 MB.
+3. Select **Save**. The image is cropped and optimized for use as your avatar.
+
+Use the trash button in the Profile tab and select **Save** to restore the generated initial. Uploaded square images are cropped and displayed through a circular mask. Avatars are private to each signed-in OpenList account.
 
 ## Browse files and folders
 
@@ -133,7 +141,7 @@ An OpenList account and a folder password serve different purposes. Signing in d
 ## Use the app on a phone
 
 - Select the menu icon in the top-left corner to open navigation.
-- Select the account icon in the top-right corner to sign in or out.
+- Select the account icon in the top-right corner to sign in, or select your avatar to open Settings.
 - Search, sorting, layout, gallery, video, and download controls remain available on mobile screens.
 - List view can be scrolled horizontally when file details do not fit on screen.
 
@@ -142,7 +150,7 @@ An OpenList account and a folder password serve different purposes. Signing in d
 Storage management is available only to OpenList administrators.
 
 1. Sign in with an administrator account.
-2. Select **Settings** in the sidebar, then select the **Storage** tab.
+2. Select **Administration** in the sidebar, then select the **Storage** tab.
 3. Select **Add storage**.
 4. Choose **Local**, **WebDAV**, **OpenList**, or **AList V3**, complete the required fields, and submit the form.
 
@@ -168,17 +176,25 @@ A **Connected** status means the storage initialized successfully. When a connec
 
 ## Change language
 
-Administrators can choose **English** or **简体中文** from the **Language** selector at the right of the Settings tabs. The choice is saved in the current browser and applies to the navigation, file actions, upload manager, and advanced search controls.
+Select **Settings**, then **Language** to choose **English** or **简体中文**. The choice is saved in the current browser.
+
+## Change appearance
+
+Select **Settings**, then **Appearance** and choose an iCloud-inspired glass theme, a Windows Explorer-inspired desktop theme, or a Notion AI-inspired workspace theme. The choice applies immediately and is saved in the current browser.
+
+## Customize frontend branding
+
+Administrators can select **Administration**, then **Branding** to change the frontend name, sidebar/mobile logo, and browser tab icon. Images can be PNG, JPEG, WebP, or GIF files up to 5 MB; the service normalizes them for consistent browser rendering. Use the trash button beside an image and save to restore its default.
 
 ## Use native management
 
-Administrators can select **Settings**, then **Native Management**, to open the original OpenList management interface inside the custom app. The panel uses the current verified administrator session and does not expose the native OpenList port to the public internet. If the administrator session expires, sign in again through the custom app and reopen the tab.
+Administrators can select **Administration**, then **Native Management**, to open the original OpenList management interface inside the custom app. The panel uses the current verified administrator session and does not expose the native OpenList port to the public internet. If the administrator session expires, sign in again through the custom app and reopen the tab.
 
 ## Manage users
 
 User management is available only to OpenList administrators.
 
-1. Select **Settings** in the sidebar, then select the **Users** tab.
+1. Select **Administration** in the sidebar, then select the **Users** tab.
 2. Select **Add user** to create a standard OpenList user.
 3. Set the username, password, base path, and the permissions the user needs.
 
@@ -221,6 +237,7 @@ The application stores the following information in the browser:
 - Your OpenList authentication token
 - Your grid or list layout preference
 - Your language preference
+- Your appearance theme preference
 
 Folder passwords are kept only in the current page's memory. The application does not permanently store them in browser storage.
 

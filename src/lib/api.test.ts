@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyEntries, createUser, getFile, listDirectory, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, uploadFile } from "./api";
+import { copyEntries, createUser, getFile, listDirectory, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, updateFrontendBranding, uploadFile, uploadUserAvatar } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -127,6 +127,23 @@ describe("OpenList API client", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/custom/session");
     expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("Authorization")).toBe("thumbnail-token");
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ path: "/Pictures", password: "folder-password" });
+  });
+
+  it("uses protected custom endpoints for branding and avatar updates", async () => {
+    setToken("profile-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 200, message: "success", data: { name: "Team Drive", logoUrl: "", iconUrl: "" } }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 200, message: "success", data: { avatarUrl: "/api/custom/profile/avatar?v=1" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await updateFrontendBranding("Team Drive");
+    await uploadUserAvatar(new File(["image"], "avatar.png", { type: "image/png" }));
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/custom/admin/branding");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ name: "Team Drive" });
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/custom/profile/avatar");
+    expect(fetchMock.mock.calls[1][1]?.method).toBe("PUT");
+    expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get("Content-Type")).toBe("image/png");
+    expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get("Authorization")).toBe("profile-token");
   });
 
   it("maps file management operations to the OpenList batch contracts", async () => {
