@@ -154,33 +154,52 @@ Keep `DRIVE_BIND_IP=127.0.0.1` when Nginx runs on the same host. Binding to
 
 ## Host Nginx and HTTPS
 
-The repository includes Docker-specific templates in `deploy/nginx/`. They proxy
-the whole public origin to the gateway; the gateway performs all BFF/OpenList route
-selection internally.
+The repository includes Docker-specific Nginx templates in `deploy/nginx/`. They
+proxy the whole public origin to the gateway; the gateway performs all BFF/OpenList
+route selection internally. The templates are domain- and port-neutral. Render one
+with `render-docker-config.sh` instead of editing an example hostname by hand.
 
-For `drive.erailab.com`, install the temporary HTTP template and issue a certificate:
-
-```bash
-sudo install -d -m 0755 /var/www/certbot
-sudo install -m 0644 deploy/nginx/drive.erailab.com.docker.http.conf /etc/nginx/conf.d/openlist-drive.conf
-sudo nginx -t
-sudo nginx -s reload
-sudo certbot certonly --webroot -w /var/www/certbot -d drive.erailab.com
-```
-
-Then activate the HTTPS proxy:
+Set the public hostname and the host-side `DRIVE_PORT` from `.env` (the example
+below intentionally uses a placeholder domain):
 
 ```bash
-sudo install -m 0644 deploy/nginx/drive.erailab.com.docker.conf /etc/nginx/conf.d/openlist-drive.conf
+DOMAIN=files.example.com
+DRIVE_PORT=8080
+curl -fsSLo render-docker-config.sh \
+  https://raw.githubusercontent.com/ForeverLove37/Openlist_Custom_Frontend/main/deploy/nginx/render-docker-config.sh
+curl -fsSLo openlist-drive.docker.http.conf.template \
+  https://raw.githubusercontent.com/ForeverLove37/Openlist_Custom_Frontend/main/deploy/nginx/openlist-drive.docker.http.conf.template
+curl -fsSLo openlist-drive.docker.conf.template \
+  https://raw.githubusercontent.com/ForeverLove37/Openlist_Custom_Frontend/main/deploy/nginx/openlist-drive.docker.conf.template
+chmod 0755 render-docker-config.sh
+
+sudo install -d -m 0755 /var/www/certbot/.well-known/acme-challenge
+./render-docker-config.sh "$DOMAIN" "$DRIVE_PORT" http \
+  | sudo tee /etc/nginx/conf.d/openlist-drive.conf >/dev/null
 sudo nginx -t
 sudo nginx -s reload
-curl --fail https://drive.erailab.com/healthz
+sudo certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN"
 ```
 
-For another domain, replace every `drive.erailab.com` occurrence and update the
-certificate paths. If `DRIVE_PORT` is changed, update the `proxy_pass` port in the
-HTTPS template. The template disables request buffering and permits unlimited body
-size so large file uploads and media ranges remain streamable.
+After Certbot succeeds, activate the HTTPS proxy and verify the gateway:
+
+```bash
+./render-docker-config.sh "$DOMAIN" "$DRIVE_PORT" https \
+  | sudo tee /etc/nginx/conf.d/openlist-drive.conf >/dev/null
+sudo nginx -t
+sudo nginx -s reload
+curl --fail "https://${DOMAIN}/healthz"
+```
+
+The renderer accepts any DNS hostname and TCP port from `1` through `65535`. If
+Certbot stored the certificate under a different name because that hostname already
+has a certificate, set `OPENLIST_DRIVE_CERT_NAME` before rendering the HTTPS file.
+The generated proxy disables request buffering and permits unlimited body size so
+large file uploads and media ranges remain streamable.
+
+The older `drive.erailab.com.docker.*` files remain as checked-in examples for the
+project's original deployment. New installations should use the generic templates
+above; no repository file needs to be renamed when choosing a different domain.
 
 Confirm that the configured gateway and OpenList host ports remain loopback-only:
 
@@ -189,9 +208,8 @@ ss -ltnp
 ```
 
 The listening ports should match `DRIVE_BIND_IP:DRIVE_PORT` and
-`OPENLIST_BIND_IP:OPENLIST_HOST_PORT` from `.env`. If you change `DRIVE_PORT`, also
-change the `proxy_pass` port in the Docker Nginx template before reloading host
-Nginx.
+`OPENLIST_BIND_IP:OPENLIST_HOST_PORT` from `.env`. If you change `DRIVE_PORT`, render
+the Nginx file again with the new value before reloading host Nginx.
 
 ## Persistence, upgrades, and rollback
 

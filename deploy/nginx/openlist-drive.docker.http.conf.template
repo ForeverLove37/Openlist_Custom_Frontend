@@ -1,0 +1,16 @@
+# Render this file with render-docker-config.sh before installing it in Nginx.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @OPENLIST_DRIVE_DOMAIN@;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

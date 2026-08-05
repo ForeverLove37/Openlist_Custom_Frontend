@@ -54,8 +54,9 @@ docker compose -f compose.existing.yml up -d
 
 The gateway binds to `127.0.0.1:8080` by default and is intended to sit behind a
 host HTTPS reverse proxy. Both host mappings are configurable; see the [Docker
-deployment guide](DOCKER_DEPLOYMENT.md) for the complete port matrix, `drive.erailab.com`
-Nginx templates, environment variables, persistent volumes, upgrades, and rollback.
+deployment guide](DOCKER_DEPLOYMENT.md) for the complete port matrix, generic
+domain/port-aware Nginx templates, environment variables, persistent volumes,
+upgrades, and rollback.
 
 ### Build the Docker image locally
 
@@ -175,19 +176,35 @@ ports:
 
 Recreate the container after changing Compose. The Nginx templates in `deploy/nginx/` proxy `/api/custom/`, SPA routes, and static assets to the BFF, while `/api/` continues to route to OpenList. They also provide an admin-only `/legacy-tunnel/` for the iframe-based native management panel. Tunnel authorization uses the short-lived HTTP-only BFF session; Nginx injects the verified admin token into upstream OpenList requests, and the public tunnel-auth endpoint is explicitly blocked.
 
-Install the HTTP template first when issuing a certificate for a new hostname. Then request the certificate, install the HTTPS template, validate it, and reload:
+For a non-Docker systemd deployment, use the same two-stage HTTP/HTTPS flow with
+your own hostname and the actual BFF/OpenList ports. The checked-in files named
+`drive.erailab.com.*` are examples for the original server; substitute your values
+before installing them:
 
 ```bash
-sudo install -m 0644 deploy/nginx/drive.erailab.com.http.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
+DOMAIN=files.example.com
+BFF_PORT=3000
+OPENLIST_PORT=5244
+sed -e "s/drive\\.erailab\\.com/${DOMAIN}/g" \
+    -e "s/127\\.0\\.0\\.1:3000/127.0.0.1:${BFF_PORT}/g" \
+    -e "s/127\\.0\\.0\\.1:5244/127.0.0.1:${OPENLIST_PORT}/g" \
+    deploy/nginx/drive.erailab.com.http.conf \
+  | sudo tee /etc/nginx/conf.d/openlist-custom-frontend.conf >/dev/null
 sudo nginx -t
 sudo nginx -s reload
-sudo certbot certonly --webroot -w /var/www/certbot -d drive.erailab.com
-sudo install -m 0644 deploy/nginx/drive.erailab.com.conf /etc/nginx/conf.d/openlist-custom-frontend.conf
+sudo certbot certonly --webroot -w /var/www/certbot -d "${DOMAIN}"
+sed -e "s/drive\\.erailab\\.com/${DOMAIN}/g" \
+    -e "s/127\\.0\\.0\\.1:3000/127.0.0.1:${BFF_PORT}/g" \
+    -e "s/127\\.0\\.0\\.1:5244/127.0.0.1:${OPENLIST_PORT}/g" \
+    deploy/nginx/drive.erailab.com.conf \
+  | sudo tee /etc/nginx/conf.d/openlist-custom-frontend.conf >/dev/null
 sudo nginx -t
 sudo nginx -s reload
 ```
 
-`drive.erailab.com.http.conf` retains the same BFF proxy arrangement and Certbot webroot location, and is intended only for the initial certificate request or recovery.
+The Docker deployment guide's `render-docker-config.sh` is the preferred generic
+renderer when the gateway runs from Compose; it also keeps the host-side
+`DRIVE_PORT` synchronized with `proxy_pass`.
 
 The browser creates a short-lived, HTTP-only BFF session after OpenList verifies its existing sign-in token. Thumbnail URLs contain only a file path and media type, never the OpenList token. Cache keys are partitioned by OpenList user and path; cached responses are marked private. The same server-side session authorizes the native management tunnel and nested remote-storage controls for administrator accounts. Remote connection tokens are read from the local OpenList configuration by the BFF and are never returned to the browser.
 
