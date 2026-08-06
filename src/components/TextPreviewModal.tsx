@@ -19,6 +19,7 @@ export function TextPreviewModal({ name, source, downloadSource = source, kind, 
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(kind !== "pdf");
   const [error, setError] = useState("");
+  const [pdfSource, setPdfSource] = useState(source);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -35,6 +36,26 @@ export function TextPreviewModal({ name, source, downloadSource = source, kind, 
   }, [close]);
 
   useEffect(() => {
+    setPdfSource(source);
+  }, [source]);
+
+  useEffect(() => {
+    if (kind !== "pdf" || downloadSource === source) return;
+    const controller = new AbortController();
+    const headers = new Headers();
+    const token = getToken();
+    if (token) headers.set("Authorization", token);
+    fetch(source, { method: "HEAD", credentials: "include", signal: controller.signal, headers })
+      .then((response) => {
+        if (!response.ok) setPdfSource(downloadSource);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPdfSource(downloadSource);
+      });
+    return () => controller.abort();
+  }, [downloadSource, kind, source]);
+
+  useEffect(() => {
     if (kind === "pdf") return;
     const controller = new AbortController();
     setLoading(true);
@@ -43,10 +64,17 @@ export function TextPreviewModal({ name, source, downloadSource = source, kind, 
     const headers = new Headers({ Accept: "text/plain" });
     const token = getToken();
     if (token) headers.set("Authorization", token);
-    fetch(source, { credentials: "include", signal: controller.signal, headers })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Preview request failed with status ${response.status}.`);
-        return response.text();
+    const readSource = (url: string) => fetch(url, { credentials: "include", signal: controller.signal, headers }).then((response) => {
+      if (!response.ok) throw new Error(`Preview request failed with status ${response.status}.`);
+      const contentType = response.headers.get("content-type")?.toLowerCase() || "";
+      if (contentType.includes("text/html")) throw new Error("Preview endpoint returned the frontend page instead of the file.");
+      return response.text();
+    });
+    readSource(source)
+      .catch((reason: unknown) => {
+        const canFallback = reason instanceof Error && (reason.message.includes("status 404") || reason.message.includes("frontend page"));
+        if (downloadSource === source || !canFallback) throw reason;
+        return readSource(downloadSource);
       })
       .then(setContent)
       .catch((reason: unknown) => {
@@ -57,7 +85,7 @@ export function TextPreviewModal({ name, source, downloadSource = source, kind, 
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [kind, source, t]);
+  }, [downloadSource, kind, source, t]);
 
   const label = t(`preview.${kind}`);
   return (
@@ -74,7 +102,7 @@ export function TextPreviewModal({ name, source, downloadSource = source, kind, 
       </header>
       <div className={`text-preview-modal__body text-preview-modal__body--${kind}`}>
         {kind === "pdf" ? (
-          <iframe className="text-preview-modal__pdf" src={source} title={`${name} ${label}`} />
+          <iframe className="text-preview-modal__pdf" src={pdfSource} title={`${name} ${label}`} onError={() => setPdfSource(downloadSource)} />
         ) : loading ? (
           <div className="text-preview-modal__status"><LoaderCircle className="spin" size={30} /><span>{t("preview.loading")}</span></div>
         ) : error ? (

@@ -42,4 +42,21 @@ describe("TextPreviewModal", () => {
     render(<TextPreviewModal name="guide.pdf" source="/d/guide.pdf" kind="pdf" onClose={vi.fn()} />);
     expect(screen.getByTitle("guide.pdf PDF preview")).toHaveAttribute("src", "/d/guide.pdf");
   });
+
+  it("falls back to the raw source when the text preview route is missing", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 404, message: "Not found", data: null }), { status: 404, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response("fallback text", { status: 200, headers: { "Content-Type": "text/plain" } }));
+    render(<TextPreviewModal name="notes.txt" source="/api/custom/preview?path=notes.txt" downloadSource="/d/notes.txt" kind="text" onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText("fallback text")).toBeInTheDocument());
+    expect(fetchMock.mock.calls[1][0]).toBe("/d/notes.txt");
+  });
+
+  it("falls back to the raw PDF source when the preview route is missing", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 404 }));
+    render(<TextPreviewModal name="guide.pdf" source="/api/custom/preview?path=guide.pdf" downloadSource="/d/guide.pdf" kind="pdf" onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTitle("guide.pdf PDF preview")).toHaveAttribute("src", "/d/guide.pdf"));
+  });
 });
