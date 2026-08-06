@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   ArrowDownAZ,
+  CalendarClock,
+  Check,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -48,6 +50,7 @@ import { UploadDialog } from "./components/UploadDialog";
 import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
 import { TextPreviewModal } from "./components/TextPreviewModal";
 import { VideoModal } from "./components/VideoModal";
+import { ClickRipple } from "./components/ClickRipple";
 import {
   ApiError,
   clearThumbnailSession,
@@ -601,15 +604,7 @@ export default function App() {
             <div className="browser-actions">
               {canUpload && <><input className="file-input" ref={fileInputRef} type="file" multiple onChange={onFileInput} /><button className="primary-button upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={17} /> {t("common.upload")}</button></>}
               <button className="icon-button bordered-button" onClick={forceRefresh} disabled={loading} title={t("common.refresh")} aria-label={t("common.refresh")}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
-              <label className="sort-select" title="Sort files">
-                <ArrowDownAZ size={18} />
-                <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)} aria-label="Sort files by">
-                  <option value="name">Name</option>
-                  <option value="modified">Modified</option>
-                  <option value="size">Size</option>
-                </select>
-                <ChevronDown size={15} />
-              </label>
+              <SortMenu sortKey={sortKey} onChange={setSortKey} />
               <button className="icon-button bordered-button" onClick={() => setSortDirection((value) => value === "asc" ? "desc" : "asc")} title={`Sort ${sortDirection === "asc" ? "descending" : "ascending"}`}>
                 <span className={`sort-direction${sortDirection === "desc" ? " sort-direction--desc" : ""}`}>↑</span>
               </button>
@@ -683,6 +678,71 @@ export default function App() {
       {loginOpen && <LoginDialog busy={loginBusy} error={loginError} needsOtp={needsOtp} onClose={() => { setLoginOpen(false); setLoginError(""); }} onSubmit={submitLogin} />}
       {passwordOpen && <PasswordDialog path={currentPath} onClose={() => setPasswordOpen(false)} onSubmit={(password) => { setPasswords((value) => ({ ...value, [currentPath]: password })); setPasswordOpen(false); }} />}
       {settingsOpen && <Suspense fallback={<div className="dialog-backdrop"><div className="settings-loading" role="status"><LoaderCircle className="spin" size={23} /><span>{t("settings.loading")}</span></div></div>}><UserSettingsDialog user={isSignedIn ? user : null} profile={profile} theme={theme} themeFlowing={themeFlowing} initialSection={settingsSection} onThemeChange={setTheme} onThemeFlowingChange={setThemeFlowing} onProfileUpdated={(updated) => { setProfile(updated); setNoticeTone("success"); setNotice(t("profile.updated")); }} onLogin={() => { setSettingsOpen(false); setLoginOpen(true); }} onLogout={() => void signOut()} onClose={() => setSettingsOpen(false)} /></Suspense>}
+      <ClickRipple />
+    </div>
+  );
+}
+
+const SORT_OPTIONS: Array<{ key: SortKey; label: string; icon: typeof ArrowDownAZ }> = [
+  { key: "name", label: "Name", icon: ArrowDownAZ },
+  { key: "modified", label: "Modified", icon: CalendarClock },
+  { key: "size", label: "Size", icon: HardDrive },
+];
+
+function SortMenu({ sortKey, onChange }: { sortKey: SortKey; onChange: (key: SortKey) => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const selected = SORT_OPTIONS.find((option) => option.key === sortKey) ?? SORT_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={menuRef} className={`sort-select${open ? " sort-select--open" : ""}`}>
+      <button
+        type="button"
+        className="sort-select__trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Sort files by"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ArrowDownAZ size={18} />
+        <span>{selected.label}</span>
+        <ChevronDown className="sort-select__chevron" size={15} />
+      </button>
+      {open && (
+        <div className="sort-select__menu" role="listbox" aria-label="Sort files by">
+          <span className="sort-select__menu-label">Sort by</span>
+          {SORT_OPTIONS.map(({ key, label, icon: Icon }) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={sortKey === key}
+              className={`sort-select__option${sortKey === key ? " selected" : ""}`}
+              key={key}
+              onClick={() => { onChange(key); setOpen(false); }}
+            >
+              <Icon size={16} />
+              <span>{label}</span>
+              {sortKey === key && <Check size={16} className="sort-select__check" />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -211,7 +211,7 @@ export function createApp({
     }
   });
 
-  app.get("/api/custom/preview", async (request, response) => {
+  const previewHandler = async (request, response) => {
     let source;
     try {
       const kind = typeof request.query.kind === "string" ? request.query.kind : "";
@@ -237,7 +237,10 @@ export function createApp({
       const status = error instanceof ThumbnailAccessError ? error.status : 500;
       response.status(status).json({ code: status, message: error.message || "Could not load the file preview.", data: null });
     }
-  });
+  };
+  // Keep a root-level alias for installations whose legacy Nginx config only
+  // forwards `/` to the BFF and sends `/api/custom/` to OpenList.
+  app.get(["/api/custom/preview", "/preview"], previewHandler);
 
   app.get("/api/custom/thumb", async (request, response) => {
     const type = request.query.type;

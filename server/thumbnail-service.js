@@ -45,13 +45,31 @@ function freshCacheFile(cacheFile, ttlMs) {
 
 function resolveRawUrl(rawUrl, fallbackBaseUrl) {
   let url;
+  let fallback;
   try {
-    url = new URL(rawUrl, fallbackBaseUrl);
+    fallback = new URL(fallbackBaseUrl);
+    url = new URL(rawUrl, fallback);
   } catch {
     throw new Error("OpenList returned an invalid raw file URL.");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("OpenList returned an unsupported raw file URL.");
+  // OpenList can advertise its own loopback address. That address is not the
+  // OpenList container from inside the BFF, so keep the path but use the
+  // configured service origin instead.
+  if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(url.hostname.toLowerCase())) {
+    url.protocol = fallback.protocol;
+    url.hostname = fallback.hostname;
+    url.port = fallback.port;
+  }
   return url.toString();
+}
+
+class SourceFetchError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "SourceFetchError";
+    this.status = status;
+  }
 }
 
 function thumbnailTransformer() {
@@ -255,7 +273,7 @@ export function createThumbnailService({
     }
     if (source.status < 200 || source.status >= 300) {
       source.data?.destroy?.();
-      throw new Error(`Thumbnail source returned HTTP ${source.status}.`);
+      throw new SourceFetchError(`Thumbnail source returned HTTP ${source.status}.`, source.status);
     }
     if (!source.data || typeof source.data.pipe !== "function") throw new Error("Thumbnail source did not return a readable stream.");
     return source;
@@ -264,7 +282,18 @@ export function createThumbnailService({
   async function getPreviewSource(session, requestedPath) {
     const filePath = normalizeOpenListPath(requestedPath);
     const rawUrl = await fetchRawUrl(session, filePath);
-    return fetchSource(rawUrl, session);
+    try {
+      return await fetchSource(rawUrl, session);
+    } catch (error) {
+      if (!(error instanceof SourceFetchError) || error.status !== 404) throw error;
+      // A configured SiteURL or storage proxy may point to an old public host.
+      // Retry through the local OpenList gateway so previews remain available
+      // after changing domains or when a provider URL has expired.
+      const localPath = filePath.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+      const localUrl = new URL(`/d/${localPath}`, openListBaseUrl).toString();
+      if (localUrl === rawUrl) throw error;
+      return fetchSource(localUrl, session);
+    }
   }
 
   async function generateThumbnail(session, filePath, type, cacheFile) {

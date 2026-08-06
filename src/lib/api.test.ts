@@ -10,7 +10,7 @@ afterEach(() => {
 
 describe("OpenList API client", () => {
   it("builds same-origin document preview URLs", () => {
-    expect(documentPreviewUrl("/Reports/Quarter 1.pdf", "pdf")).toBe("/api/custom/preview?path=%2FReports%2FQuarter%201.pdf&kind=pdf");
+    expect(documentPreviewUrl("/Reports/Quarter 1.pdf", "pdf")).toBe("/preview?path=%2FReports%2FQuarter%201.pdf&kind=pdf");
   });
 
   it("only sends the cache-bypass flag for an explicit directory refresh", async () => {

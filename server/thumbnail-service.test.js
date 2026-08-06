@@ -83,6 +83,43 @@ describe("thumbnail service helpers", () => {
     }));
   });
 
+  it("rewrites loopback raw URLs to the configured OpenList service", async () => {
+    const httpClient = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { id: 7, role: 0 } } })
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { raw_url: "http://127.0.0.1:5244/d/docs/readme.pdf" } } }),
+      get: vi.fn().mockResolvedValue({ status: 200, data: Readable.from(Buffer.from("pdf-data")) }),
+    };
+    const service = createThumbnailService({ openListBaseUrl: "http://openlist.test:5244", httpClient });
+    const session = await service.createSession("jwt-token", "/docs");
+    const source = await service.getPreviewSource(service.getSession(session.id), "/docs/readme.pdf");
+    const chunks = [];
+    for await (const chunk of source.data) chunks.push(chunk);
+
+    expect(Buffer.concat(chunks).toString()).toBe("pdf-data");
+    expect(httpClient.get.mock.calls[0][0]).toBe("http://openlist.test:5244/d/docs/readme.pdf");
+  });
+
+  it("retries preview delivery locally when a stale public raw URL returns 404", async () => {
+    const httpClient = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { id: 7, role: 0 } } })
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { raw_url: "https://old.example.test/d/docs/readme.pdf" } } }),
+      get: vi.fn()
+        .mockResolvedValueOnce({ status: 404, data: Readable.from([]) })
+        .mockResolvedValueOnce({ status: 200, data: Readable.from(Buffer.from("pdf-data")) }),
+    };
+    const service = createThumbnailService({ openListBaseUrl: "http://openlist.test:5244", httpClient });
+    const session = await service.createSession("jwt-token", "/docs");
+    const source = await service.getPreviewSource(service.getSession(session.id), "/docs/readme.pdf");
+    const chunks = [];
+    for await (const chunk of source.data) chunks.push(chunk);
+
+    expect(Buffer.concat(chunks).toString()).toBe("pdf-data");
+    expect(httpClient.get.mock.calls[0][0]).toBe("https://old.example.test/d/docs/readme.pdf");
+    expect(httpClient.get.mock.calls[1][0]).toBe("http://openlist.test:5244/d/docs/readme.pdf");
+  });
+
   it("uses a media-specific SVG fallback", () => {
     expect(fallbackSvg("video")).toContain("VIDEO PREVIEW UNAVAILABLE");
     expect(fallbackSvg("image")).toContain("IMAGE PREVIEW UNAVAILABLE");
