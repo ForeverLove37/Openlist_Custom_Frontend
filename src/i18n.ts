@@ -17,12 +17,12 @@ const resources = {
         linkCopied: "Direct link copied.",
         refreshedSuccessfully: "Refreshed successfully.",
       },
-      settings: { title: "Settings", loading: "Opening settings", profile: "Profile", language: "Language", appearance: "Appearance", storage: "Storage", users: "Users", branding: "Branding", native: "Native Management" },
+      settings: { title: "Settings", loading: "Opening settings", profile: "Profile", language: "Language", appearance: "Appearance", storage: "Storage", users: "Users", branding: "Branding", native: "Native Management", flowingBackground: "Flowing gradient", flowingBackgroundDescription: "Animate the theme background with a slow, continuous color flow." },
       profile: {
         title: "Profile", chooseAvatar: "Choose avatar", replaceAvatar: "Replace avatar", removeAvatar: "Remove avatar", save: "Save", signOut: "Sign out",
         invalidImageType: "Use a PNG, JPEG, WebP, or GIF image.", imageTooLarge: "Images must be 5 MB or smaller.", saveFailed: "Could not update your avatar.", updated: "Profile updated.", signIn: "Sign in", signInRequired: "Sign in to manage your profile.",
       },
-      themes: { icloud: "iCloud", explorer: "Windows Explorer", notion: "Notion AI" },
+      themes: { icloud: "iCloud", explorer: "Windows Explorer", notion: "Notion AI", drive: "Google Drive" },
       branding: {
         eyebrow: "Appearance", title: "Frontend branding", subtitle: "Identity used across this custom file browser.", frontendName: "Frontend name", logo: "Logo", webIcon: "Web icon",
         logoHint: "Used in the sidebar and mobile header.", iconHint: "Used in browser tabs and bookmarks.", choose: "Choose image", replace: "Replace", remove: "Remove", save: "Save branding", saving: "Saving", saved: "Branding saved.", nameRequired: "Frontend name is required.", saveFailed: "Could not save frontend branding.",
@@ -49,12 +49,12 @@ const resources = {
         linkCopied: "直链已复制。",
         refreshedSuccessfully: "刷新成功。",
       },
-      settings: { title: "设置", loading: "正在打开设置", profile: "个人资料", language: "语言", appearance: "外观", storage: "存储", users: "用户", branding: "品牌设置", native: "原生管理" },
+      settings: { title: "设置", loading: "正在打开设置", profile: "个人资料", language: "语言", appearance: "外观", storage: "存储", users: "用户", branding: "品牌设置", native: "原生管理", flowingBackground: "流动渐变背景", flowingBackgroundDescription: "让主题背景以缓慢、连续的色彩流动。" },
       profile: {
         title: "个人资料", chooseAvatar: "选择头像", replaceAvatar: "更换头像", removeAvatar: "移除头像", save: "保存", signOut: "退出登录",
         invalidImageType: "请使用 PNG、JPEG、WebP 或 GIF 图片。", imageTooLarge: "图片大小不能超过 5 MB。", saveFailed: "无法更新头像。", updated: "个人资料已更新。", signIn: "登录", signInRequired: "登录后即可管理个人资料。",
       },
-      themes: { icloud: "iCloud", explorer: "Windows 资源管理器", notion: "Notion AI" },
+      themes: { icloud: "iCloud", explorer: "Windows 资源管理器", notion: "Notion AI", drive: "Google Drive" },
       branding: {
         eyebrow: "外观", title: "前端品牌设置", subtitle: "设置此自定义文件浏览器中显示的品牌标识。", frontendName: "前端名称", logo: "Logo", webIcon: "网页图标",
         logoHint: "显示在侧边栏和移动端顶部。", iconHint: "显示在浏览器标签页和书签中。", choose: "选择图片", replace: "更换", remove: "移除", save: "保存品牌设置", saving: "正在保存", saved: "品牌设置已保存。", nameRequired: "前端名称不能为空。", saveFailed: "无法保存前端品牌设置。",

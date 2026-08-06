@@ -211,6 +211,34 @@ export function createApp({
     }
   });
 
+  app.get("/api/custom/preview", async (request, response) => {
+    let source;
+    try {
+      const kind = typeof request.query.kind === "string" ? request.query.kind : "";
+      if (kind !== "pdf" && kind !== "text" && kind !== "markdown") {
+        throw new ThumbnailAccessError("The preview type is invalid.", 400);
+      }
+      const session = thumbnailService.getSession(sessionId(request));
+      source = await thumbnailService.getPreviewSource(session, request.query.path);
+      response.set({
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": "inline",
+        "Content-Type": kind === "pdf" ? "application/pdf" : "text/plain; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+      });
+      source.data.on("error", (error) => response.destroy(error));
+      source.data.pipe(response);
+    } catch (error) {
+      source?.data?.destroy?.();
+      if (response.headersSent) {
+        response.destroy(error instanceof Error ? error : undefined);
+        return;
+      }
+      const status = error instanceof ThumbnailAccessError ? error.status : 500;
+      response.status(status).json({ code: status, message: error.message || "Could not load the file preview.", data: null });
+    }
+  });
+
   app.get("/api/custom/thumb", async (request, response) => {
     const type = request.query.type;
     try {

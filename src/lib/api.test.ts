@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyEntries, createUser, getFile, listDirectory, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, updateFrontendBranding, uploadFile, uploadUserAvatar } from "./api";
+import { copyEntries, createUser, documentPreviewUrl, getFile, listDirectory, listStorages, listUsers, moveEntries, removeEntries, renameEntry, searchFiles, setStorageEnabled, setToken, syncThumbnailSession, updateFrontendBranding, uploadFile, uploadUserAvatar } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -9,6 +9,10 @@ afterEach(() => {
 });
 
 describe("OpenList API client", () => {
+  it("builds same-origin document preview URLs", () => {
+    expect(documentPreviewUrl("/Reports/Quarter 1.pdf", "pdf")).toBe("/api/custom/preview?path=%2FReports%2FQuarter%201.pdf&kind=pdf");
+  });
+
   it("only sends the cache-bypass flag for an explicit directory refresh", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: 200, message: "success", data: { content: [], total: 0 } }), { status: 200, headers: { "Content-Type": "application/json" } }))

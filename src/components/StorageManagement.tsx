@@ -15,6 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import {
   ApiError,
   createStorage,
@@ -234,15 +235,16 @@ interface StorageFormProps {
 }
 
 export function StorageForm({ existing, saving, onClose, onSave }: StorageFormProps) {
+  const { closing, close } = useDialogAnimation(onClose);
   const [values, setValues] = useState<StorageFormValues>(() => existing ? storageToForm(existing) : emptyStorageForm());
   const [error, setError] = useState("");
   const editing = Boolean(existing);
 
   useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !saving) onClose(); };
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !saving) close(); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose, saving]);
+  }, [close, saving]);
 
   const set = <K extends keyof StorageFormValues>(key: K, value: StorageFormValues[K]) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -272,11 +274,11 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
   const isLocal = values.driver === "Local";
   const isRemote = values.driver === "OpenList" || values.driver === "AList V3";
   return (
-    <div className="dialog-backdrop storage-dialog-backdrop" role="presentation">
+    <div className={`dialog-backdrop storage-dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="storage-dialog" role="dialog" aria-modal="true" aria-labelledby="storage-form-title">
         <header className="storage-dialog__header">
           <div><span className="dialog__icon"><FolderCog size={24} /></span><div><h2 id="storage-form-title">{editing ? "Edit storage" : "Add storage"}</h2><p>{editing ? existing?.mount_path : "Connect a storage provider"}</p></div></div>
-          <button className="icon-button" onClick={onClose} disabled={saving} title="Close"><X size={21} /></button>
+          <button className="icon-button" onClick={close} disabled={saving || closing} title="Close"><X size={21} /></button>
         </header>
         <form className="storage-form" onSubmit={(event) => void submit(event)}>
           <fieldset className="driver-options" disabled={editing || saving}>
@@ -332,7 +334,7 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
 
           {error && <div className="form-error" role="alert">{error}</div>}
           <footer className="storage-dialog__footer">
-            <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="secondary-button" type="button" onClick={close} disabled={saving || closing}>Cancel</button>
             <button className="primary-button" type="submit" disabled={saving}>{saving && <LoaderCircle className="spin" size={17} />}{editing ? "Save changes" : "Add storage"}</button>
           </footer>
         </form>
@@ -342,14 +344,15 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
 }
 
 function ConfirmDeleteDialog({ storage, busy, onCancel, onConfirm }: { storage: OpenListStorage; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const { closing, close } = useDialogAnimation(onCancel);
   return (
-    <div className="dialog-backdrop" role="presentation">
+    <div className={`dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-storage-title">
-        <button className="icon-button dialog__close" onClick={onCancel} disabled={busy} title="Close" aria-label="Close"><X size={20} /></button>
+        <button className="icon-button dialog__close" onClick={close} disabled={busy || closing} title="Close" aria-label="Close"><X size={20} /></button>
         <div className="dialog__icon dialog__icon--danger"><Trash2 size={23} /></div>
         <h2 id="delete-storage-title">Delete storage?</h2>
         <p><strong>{storage.mount_path}</strong> will be removed from OpenList. Files at the source are not deleted.</p>
-        <div className="confirm-dialog__actions"><button className="secondary-button" onClick={onCancel} disabled={busy}>Cancel</button><button className="delete-button" onClick={onConfirm} disabled={busy}>{busy && <LoaderCircle className="spin" size={17} />} Delete storage</button></div>
+        <div className="confirm-dialog__actions"><button className="secondary-button" onClick={close} disabled={busy || closing}>Cancel</button><button className="delete-button" onClick={onConfirm} disabled={busy || closing}>{busy && <LoaderCircle className="spin" size={17} />} Delete storage</button></div>
       </section>
     </div>
   );

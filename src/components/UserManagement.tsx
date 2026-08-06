@@ -11,6 +11,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import { ApiError, createUser, deleteUser, getUser, listUsers, updateUser } from "../lib/api";
 import {
   ADMIN_ROLE,
@@ -164,15 +165,16 @@ interface UserFormProps {
 }
 
 export function UserForm({ existing, saving, onClose, onSave }: UserFormProps) {
+  const { closing, close } = useDialogAnimation(onClose);
   const [values, setValues] = useState<UserFormValues>(() => existing ? userToForm(existing) : emptyUserForm());
   const [error, setError] = useState("");
   const editing = Boolean(existing);
 
   useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !saving) onClose(); };
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !saving) close(); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose, saving]);
+  }, [close, saving]);
 
   const set = <K extends keyof UserFormValues>(key: K, value: UserFormValues[K]) => setValues((current) => ({ ...current, [key]: value }));
   const submit = async (event: FormEvent) => {
@@ -194,11 +196,11 @@ export function UserForm({ existing, saving, onClose, onSave }: UserFormProps) {
   };
 
   return (
-    <div className="dialog-backdrop storage-dialog-backdrop" role="presentation">
+    <div className={`dialog-backdrop storage-dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="storage-dialog user-dialog" role="dialog" aria-modal="true" aria-labelledby="user-form-title">
         <header className="storage-dialog__header">
           <div><span className="dialog__icon"><UserCog size={24} /></span><div><h2 id="user-form-title">{editing ? "Edit user" : "Add user"}</h2><p>{editing ? existing?.username : "Create a standard OpenList user"}</p></div></div>
-          <button className="icon-button" onClick={onClose} disabled={saving} title="Close"><X size={21} /></button>
+          <button className="icon-button" onClick={close} disabled={saving || closing} title="Close"><X size={21} /></button>
         </header>
         <form className="storage-form" onSubmit={(event) => void submit(event)}>
           <div className="form-section form-section--first">
@@ -219,7 +221,7 @@ export function UserForm({ existing, saving, onClose, onSave }: UserFormProps) {
             </div>
           </div>
           {error && <div className="form-error" role="alert">{error}</div>}
-          <footer className="storage-dialog__footer"><button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving && <LoaderCircle className="spin" size={17} />}{editing ? "Save changes" : "Create user"}</button></footer>
+          <footer className="storage-dialog__footer"><button className="secondary-button" type="button" onClick={close} disabled={saving || closing}>Cancel</button><button className="primary-button" type="submit" disabled={saving || closing}>{saving && <LoaderCircle className="spin" size={17} />}{editing ? "Save changes" : "Create user"}</button></footer>
         </form>
       </section>
     </div>
@@ -227,7 +229,8 @@ export function UserForm({ existing, saving, onClose, onSave }: UserFormProps) {
 }
 
 function ConfirmDeleteUser({ user, busy, onCancel, onConfirm }: { user: ManagedUser; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
-  return <div className="dialog-backdrop" role="presentation"><section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title"><button className="icon-button dialog__close" onClick={onCancel} disabled={busy} title="Close" aria-label="Close"><X size={20} /></button><div className="dialog__icon dialog__icon--danger"><Trash2 size={23} /></div><h2 id="delete-user-title">Delete user?</h2><p><strong>{user.username}</strong> will lose access to OpenList. Their source files will not be deleted.</p><div className="confirm-dialog__actions"><button className="secondary-button" onClick={onCancel} disabled={busy}>Cancel</button><button className="delete-button" onClick={onConfirm} disabled={busy}>{busy && <LoaderCircle className="spin" size={17} />} Delete user</button></div></section></div>;
+  const { closing, close } = useDialogAnimation(onCancel);
+  return <div className={`dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation"><section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title"><button className="icon-button dialog__close" onClick={close} disabled={busy || closing} title="Close" aria-label="Close"><X size={20} /></button><div className="dialog__icon dialog__icon--danger"><Trash2 size={23} /></div><h2 id="delete-user-title">Delete user?</h2><p><strong>{user.username}</strong> will lose access to OpenList. Their source files will not be deleted.</p><div className="confirm-dialog__actions"><button className="secondary-button" onClick={close} disabled={busy || closing}>Cancel</button><button className="delete-button" onClick={onConfirm} disabled={busy || closing}>{busy && <LoaderCircle className="spin" size={17} />} Delete user</button></div></section></div>;
 }
 
 function UserLoading() {

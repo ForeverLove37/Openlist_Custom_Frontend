@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, FolderOpen, LoaderCircle, Search, SlidersHorizontal, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import { ApiError, getFile, searchFiles } from "../lib/api";
 import { formatDate, formatSize, getFileKind, joinPath } from "../lib/files";
 import type { SearchResult } from "../lib/types";
@@ -49,6 +50,7 @@ function resultKind(result: SearchResult) {
 
 export function AdvancedSearch({ initialLocation, passwordForPath, onClose, onNavigate }: AdvancedSearchProps) {
   const { t } = useTranslation();
+  const { closing, close } = useDialogAnimation(onClose);
   const [filters, setFilters] = useState<SearchFilters>(() => initialFilters(initialLocation));
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -117,9 +119,9 @@ export function AdvancedSearch({ initialLocation, passwordForPath, onClose, onNa
   };
 
   return (
-    <div className="dialog-backdrop advanced-search-backdrop" role="presentation">
+    <div className={`dialog-backdrop advanced-search-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="dialog advanced-search" role="dialog" aria-modal="true" aria-labelledby="advanced-search-title">
-        <button className="icon-button dialog__close" onClick={onClose} title={t("common.close")}><X size={20} /></button>
+        <button className="icon-button dialog__close" onClick={close} disabled={closing} title={t("common.close")}><X size={20} /></button>
         <div className="dialog__icon"><SlidersHorizontal size={22} /></div>
         <h2 id="advanced-search-title">{t("search.title")}</h2>
         <p>{t("search.description")}</p>
@@ -148,7 +150,7 @@ export function AdvancedSearch({ initialLocation, passwordForPath, onClose, onNa
         {searched && !loading && <div className="advanced-search__results" aria-live="polite">
           <div className="advanced-search__result-summary">{t("search.resultCount", { count: results.length })}</div>
           {results.length === 0 ? <div className="advanced-search__empty"><FolderOpen size={24} />{t("search.noResults")}</div> : results.map((result) => (
-            <button className="advanced-search__result" key={`${result.parent}/${result.name}`} onClick={() => { onNavigate(result.is_dir ? joinPath(result.parent, result.name) : result.parent); onClose(); }}>
+            <button className="advanced-search__result" key={`${result.parent}/${result.name}`} onClick={() => { onNavigate(result.is_dir ? joinPath(result.parent, result.name) : result.parent); close(); }}>
               <FileIcon item={{ name: result.name, is_dir: result.is_dir }} size={19} />
               <span><strong>{result.name}</strong><small>{result.parent}</small></span>
               <span className="advanced-search__result-meta">{result.is_dir ? t("search.folder") : formatSize(result.size)}<small>{result.modified ? formatDate(result.modified) : t("search.openLocation")}</small></span>

@@ -29,8 +29,10 @@ const defaultProps = {
   user,
   profile: { avatarUrl: "/api/custom/profile/avatar?v=1" },
   theme: "icloud" as const,
+  themeFlowing: false,
   initialSection: "profile" as const,
   onThemeChange: vi.fn(),
+  onThemeFlowingChange: vi.fn(),
   onProfileUpdated: vi.fn(),
   onLogin: vi.fn(),
   onLogout: vi.fn(),
@@ -47,7 +49,8 @@ afterEach(cleanup);
 describe("UserSettingsDialog", () => {
   it("integrates profile, language, and appearance controls", async () => {
     const onThemeChange = vi.fn();
-    const { container } = render(<UserSettingsDialog {...defaultProps} onThemeChange={onThemeChange} />);
+    const onThemeFlowingChange = vi.fn();
+    const { container } = render(<UserSettingsDialog {...defaultProps} onThemeChange={onThemeChange} onThemeFlowingChange={onThemeFlowingChange} />);
 
     expect(container.querySelector(".account-avatar img")).toHaveAttribute("src", defaultProps.profile.avatarUrl);
     expect(screen.getByRole("button", { name: "Profile" })).toBeInTheDocument();
@@ -55,6 +58,9 @@ describe("UserSettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
     fireEvent.click(screen.getByRole("radio", { name: "Windows Explorer" }));
     expect(onThemeChange).toHaveBeenCalledWith("explorer");
+    fireEvent.click(screen.getByRole("radio", { name: "Notion AI" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Flowing gradient/i }));
+    expect(onThemeFlowingChange).toHaveBeenCalledWith(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Language" }));
     fireEvent.click(screen.getByRole("radio", { name: /简体中文/ }));
@@ -80,12 +86,13 @@ describe("UserSettingsDialog", () => {
     expect(onLogin).toHaveBeenCalledTimes(1);
   });
 
-  it("does not close when the settings backdrop is clicked", () => {
+  it("does not close when the settings backdrop is clicked", async () => {
     const onClose = vi.fn();
     render(<UserSettingsDialog {...defaultProps} onClose={onClose} />);
     fireEvent.mouseDown(screen.getByRole("presentation"));
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTitle("Close"));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

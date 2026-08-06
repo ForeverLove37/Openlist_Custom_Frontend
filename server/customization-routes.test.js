@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createApp, THUMBNAIL_SESSION_COOKIE } from "./app.js";
 import { ThumbnailAccessError } from "./thumbnail-service.js";
@@ -31,6 +32,7 @@ describe("customization HTTP routes", () => {
         if (!session) throw new ThumbnailAccessError("Thumbnail session expired.");
         return session;
       }),
+      getPreviewSource: vi.fn().mockResolvedValue({ data: Readable.from(Buffer.from("%PDF-preview")) }),
     };
     const customizationService = {
       getBranding: vi.fn().mockResolvedValue({ name: "Team Drive", logoUrl: "", iconUrl: "" }),
@@ -82,6 +84,13 @@ describe("customization HTTP routes", () => {
 
       const guestProfile = await fetch(`${baseUrl}/api/custom/profile`, { headers: sessionCookie("guest-session") });
       expect(guestProfile.status).toBe(401);
+
+      const preview = await fetch(`${baseUrl}/api/custom/preview?path=%2Fdocs%2Fguide.pdf&kind=pdf`, { headers: sessionCookie("user-session") });
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get("content-type")).toContain("application/pdf");
+      expect(preview.headers.get("content-disposition")).toBe("inline");
+      expect(await preview.text()).toBe("%PDF-preview");
+      expect(thumbnailService.getPreviewSource).toHaveBeenCalledWith(expect.objectContaining({ userId: 9 }), "/docs/guide.pdf");
     });
   });
 });

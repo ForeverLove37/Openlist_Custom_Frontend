@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, LoaderCircle, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { ApiError, getFile } from "../lib/api";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import { joinPath } from "../lib/files";
 import type { OpenListItem } from "../lib/types";
 
@@ -15,6 +16,7 @@ interface GalleryProps {
 interface Position { x: number; y: number }
 
 export function Gallery({ images, initialIndex, directoryPath, password, onClose }: GalleryProps) {
+  const { closing, close } = useDialogAnimation(onClose);
   const [index, setIndex] = useState(initialIndex);
   const [source, setSource] = useState("");
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ export function Gallery({ images, initialIndex, directoryPath, password, onClose
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close();
       if (event.key === "ArrowLeft" && images.length > 1) previous();
       if (event.key === "ArrowRight" && images.length > 1) next();
       if (event.key === "+" || event.key === "=") setScale((value) => Math.min(5, value + 0.25));
@@ -59,7 +61,7 @@ export function Gallery({ images, initialIndex, directoryPath, password, onClose
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [images.length, next, onClose, previous]);
+  }, [close, images.length, next, previous]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -76,7 +78,7 @@ export function Gallery({ images, initialIndex, directoryPath, password, onClose
   };
 
   return (
-    <div className="gallery" role="dialog" aria-modal="true" aria-label={`Image preview: ${image.name}`}>
+    <div className={`gallery${closing ? " is-closing" : ""}`} role="dialog" aria-modal="true" aria-label={`Image preview: ${image.name}`}>
       <div className="gallery__topbar">
         <div className="gallery__identity">
           <strong>{image.name}</strong>
@@ -87,7 +89,7 @@ export function Gallery({ images, initialIndex, directoryPath, password, onClose
           <button className="overlay-button" onClick={() => zoom(0.25)} disabled={scale >= 5} title="Zoom in"><ZoomIn size={20} /></button>
           <button className="overlay-button" onClick={resetTransform} disabled={scale === 1} title="Reset zoom"><RotateCcw size={20} /></button>
           {source && <a className="overlay-button" href={source} download={image.name} title="Download image"><Download size={20} /></a>}
-          <button className="overlay-button" onClick={onClose} title="Close preview"><X size={22} /></button>
+          <button className="overlay-button" onClick={close} disabled={closing} title="Close preview"><X size={22} /></button>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, LoaderCircle, LockKeyhole, X } from "lucide-react";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 
 interface LoginDialogProps {
   busy: boolean;
@@ -13,15 +14,16 @@ export function LoginDialog({ busy, error, needsOtp, onClose, onSubmit }: LoginD
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
-  useEscape(onClose);
+  const { closing, close } = useDialogAnimation(onClose);
+  useEscape(close);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSubmit(username.trim(), password, otp.trim());
   };
   return (
-    <div className="dialog-backdrop" role="presentation">
+    <div className={`dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="login-title">
-        <button className="icon-button dialog__close" onClick={onClose} title="Close"><X size={20} /></button>
+        <button className="icon-button dialog__close" onClick={close} disabled={busy || closing} title="Close"><X size={20} /></button>
         <div className="dialog__icon"><KeyRound size={24} /></div>
         <h2 id="login-title">Sign in to OpenList</h2>
         <p>Use your OpenList account to access private files.</p>
@@ -47,11 +49,12 @@ interface PasswordDialogProps {
 
 export function PasswordDialog({ path, onClose, onSubmit }: PasswordDialogProps) {
   const [password, setPassword] = useState("");
-  useEscape(onClose);
+  const { closing, close } = useDialogAnimation(onClose);
+  useEscape(close);
   return (
-    <div className="dialog-backdrop" role="presentation">
+    <div className={`dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="password-title">
-        <button className="icon-button dialog__close" onClick={onClose} title="Close"><X size={20} /></button>
+        <button className="icon-button dialog__close" onClick={close} disabled={closing} title="Close"><X size={20} /></button>
         <div className="dialog__icon dialog__icon--amber"><LockKeyhole size={24} /></div>
         <h2 id="password-title">Folder password</h2>
         <p>Enter the password for <strong>{path}</strong>.</p>

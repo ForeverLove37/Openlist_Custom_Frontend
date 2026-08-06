@@ -3,16 +3,19 @@ import { Download, FileText, LoaderCircle, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getToken } from "../lib/api";
 import type { DocumentPreviewKind } from "../lib/files";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 
 interface TextPreviewModalProps {
   name: string;
   source: string;
+  downloadSource?: string;
   kind: DocumentPreviewKind;
   onClose: () => void;
 }
 
-export function TextPreviewModal({ name, source, kind, onClose }: TextPreviewModalProps) {
+export function TextPreviewModal({ name, source, downloadSource = source, kind, onClose }: TextPreviewModalProps) {
   const { t } = useTranslation();
+  const { closing, close } = useDialogAnimation(onClose);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(kind !== "pdf");
   const [error, setError] = useState("");
@@ -25,11 +28,11 @@ export function TextPreviewModal({ name, source, kind, onClose }: TextPreviewMod
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [close]);
 
   useEffect(() => {
     if (kind === "pdf") return;
@@ -58,15 +61,15 @@ export function TextPreviewModal({ name, source, kind, onClose }: TextPreviewMod
 
   const label = t(`preview.${kind}`);
   return (
-    <div className="text-preview-modal" role="dialog" aria-modal="true" aria-labelledby="text-preview-title">
+    <div className={`text-preview-modal${closing ? " is-closing" : ""}`} role="dialog" aria-modal="true" aria-labelledby="text-preview-title">
       <header className="text-preview-modal__header">
         <div className="text-preview-modal__identity">
           <span className="dialog__icon"><FileText size={21} /></span>
           <div><strong id="text-preview-title">{name}</strong><small>{label}</small></div>
         </div>
         <div className="text-preview-modal__actions">
-          <a className="overlay-button" href={source} download={name} rel="noopener" title={t("preview.download")}><Download size={19} /></a>
-          <button className="overlay-button" onClick={onClose} title={t("common.close")} aria-label={t("common.close")}><X size={22} /></button>
+          <a className="overlay-button" href={downloadSource} download={name} rel="noopener" title={t("preview.download")}><Download size={19} /></a>
+          <button className="overlay-button" onClick={close} disabled={closing} title={t("common.close")} aria-label={t("common.close")}><X size={22} /></button>
         </div>
       </header>
       <div className={`text-preview-modal__body text-preview-modal__body--${kind}`}>

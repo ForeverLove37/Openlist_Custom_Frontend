@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../i18n";
 import { UploadDialog } from "./UploadDialog";
@@ -38,14 +38,15 @@ describe("UploadDialog", () => {
     expect(dropZone).not.toHaveClass("upload-drop-zone--active");
   });
 
-  it("does not close when the backdrop is clicked", () => {
+  it("does not close when the backdrop is clicked", async () => {
     const onClose = vi.fn();
     render(<UploadDialog path="/Documents" onClose={onClose} onFiles={vi.fn()} onBrowse={vi.fn()} />);
 
     fireEvent.mouseDown(screen.getByRole("presentation"));
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });
 

@@ -52,6 +52,7 @@ import {
   ApiError,
   clearThumbnailSession,
   copyEntries,
+  documentPreviewUrl,
   getCurrentUser,
   getFile,
   getFrontendBranding,
@@ -74,13 +75,13 @@ import {
   locationFromDirectoryPath,
   sortItems,
 } from "./lib/files";
-import { applyTheme, readStoredTheme, type ThemePreset } from "./lib/theme";
+import { applyTheme, readStoredTheme, readStoredThemeFlowing, type ThemePreset } from "./lib/theme";
 import type { FrontendBranding, OpenListItem, OpenListUser, SortDirection, SortKey, UserProfile, ViewMode } from "./lib/types";
 import { useDirectory } from "./hooks/useDirectory";
 
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
-interface DocumentPreviewSelection { name: string; source: string; kind: "pdf" | "text" | "markdown" }
+interface DocumentPreviewSelection { name: string; source: string; downloadSource: string; kind: "pdf" | "text" | "markdown" }
 type AppView = "files" | "storages" | "users" | "branding" | "native";
 
 const ADMIN_ROLE = 2;
@@ -157,6 +158,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("profile");
   const [theme, setTheme] = useState<ThemePreset>(readStoredTheme);
+  const [themeFlowing, setThemeFlowing] = useState(readStoredThemeFlowing);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadControllers = useRef(new Map<string, AbortController>());
   const uploadSequence = useRef(0);
@@ -187,7 +189,7 @@ export default function App() {
 
   useEffect(loadUser, [loadUser]);
 
-  useEffect(() => applyTheme(theme), [theme]);
+  useEffect(() => applyTheme(theme, themeFlowing), [theme, themeFlowing]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -320,7 +322,12 @@ export default function App() {
     }
     const previewKind = getDocumentPreviewKind(item);
     if (previewKind) {
-      setDocumentPreview({ name: item.name, source: detail.raw_url, kind: previewKind });
+      setDocumentPreview({
+        name: item.name,
+        source: documentPreviewUrl(joinPath(currentPath, item.name), previewKind),
+        downloadSource: detail.raw_url,
+        kind: previewKind,
+      });
       return;
     }
     window.location.assign(detail.raw_url);
@@ -560,7 +567,7 @@ export default function App() {
         <div className={`topbar${isAdminView(appView) ? " topbar--admin" : ""}`}>
           {appView === "files" ? (
             <>
-              <nav className="breadcrumbs" aria-label="Breadcrumb">
+              <nav className="breadcrumbs" key={currentPath} aria-label="Breadcrumb">
                 <button onClick={() => navigate("/")} title={t("nav.files")}><HardDrive size={19} /><span>{t("nav.files")}</span></button>
                 {breadcrumbParts.map((part, index) => {
                   const path = `/${breadcrumbParts.slice(0, index + 1).join("/")}`;
@@ -577,7 +584,7 @@ export default function App() {
               </div>
             </>
           ) : (
-            <nav className="breadcrumbs" aria-label="Breadcrumb">
+            <nav className="breadcrumbs" key={appView} aria-label="Breadcrumb">
               <button onClick={() => navigate("/")} title={t("nav.files")}><HardDrive size={19} /><span>{t("nav.files")}</span></button>
               <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>{t("nav.administration")}</button></span>
               <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "branding" ? t("settings.branding") : appView === "native" ? t("settings.native") : t("settings.storage")}</button></span>
@@ -675,7 +682,7 @@ export default function App() {
       {(fileOperation === "copy" || fileOperation === "move") && selectedItems.length > 0 && <FolderPickerDialog operation={fileOperation} sourcePath={currentPath} items={selectedItems} passwords={passwords} busy={operationBusy} operationError={operationError} onClose={closeFileOperation} onConfirm={(destination) => void runFileOperation(fileOperation, destination)} />}
       {loginOpen && <LoginDialog busy={loginBusy} error={loginError} needsOtp={needsOtp} onClose={() => { setLoginOpen(false); setLoginError(""); }} onSubmit={submitLogin} />}
       {passwordOpen && <PasswordDialog path={currentPath} onClose={() => setPasswordOpen(false)} onSubmit={(password) => { setPasswords((value) => ({ ...value, [currentPath]: password })); setPasswordOpen(false); }} />}
-      {settingsOpen && <Suspense fallback={<div className="dialog-backdrop"><div className="settings-loading" role="status"><LoaderCircle className="spin" size={23} /><span>{t("settings.loading")}</span></div></div>}><UserSettingsDialog user={isSignedIn ? user : null} profile={profile} theme={theme} initialSection={settingsSection} onThemeChange={setTheme} onProfileUpdated={(updated) => { setProfile(updated); setNoticeTone("success"); setNotice(t("profile.updated")); }} onLogin={() => { setSettingsOpen(false); setLoginOpen(true); }} onLogout={() => void signOut()} onClose={() => setSettingsOpen(false)} /></Suspense>}
+      {settingsOpen && <Suspense fallback={<div className="dialog-backdrop"><div className="settings-loading" role="status"><LoaderCircle className="spin" size={23} /><span>{t("settings.loading")}</span></div></div>}><UserSettingsDialog user={isSignedIn ? user : null} profile={profile} theme={theme} themeFlowing={themeFlowing} initialSection={settingsSection} onThemeChange={setTheme} onThemeFlowingChange={setThemeFlowing} onProfileUpdated={(updated) => { setProfile(updated); setNoticeTone("success"); setNotice(t("profile.updated")); }} onLogin={() => { setSettingsOpen(false); setLoginOpen(true); }} onLogout={() => void signOut()} onClose={() => setSettingsOpen(false)} /></Suspense>}
     </div>
   );
 }

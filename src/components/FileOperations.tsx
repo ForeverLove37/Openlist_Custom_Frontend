@@ -11,6 +11,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import { ApiError, listDirectory } from "../lib/api";
 import { destinationError, joinPath } from "../lib/files";
 import type { OpenListItem } from "../lib/types";
@@ -96,16 +97,17 @@ interface RenameDialogProps {
 
 export function RenameDialog({ item, busy, error, onClose, onSubmit }: RenameDialogProps) {
   const [name, setName] = useState(item.name);
-  useEscape(busy ? () => {} : onClose);
+  const { closing, close } = useDialogAnimation(onClose);
+  useEscape(busy || closing ? () => {} : close);
   const invalid = !name.trim() || name.trim() === "." || name.trim() === ".." || /[\\/]/.test(name);
   return (
-    <DialogFrame title="Rename item" icon={<Pencil size={22} />} onClose={busy ? undefined : onClose}>
+    <DialogFrame title="Rename item" icon={<Pencil size={22} />} onClose={busy || closing ? undefined : close} closing={closing}>
       <p>Enter a new name for <strong>{item.name}</strong>.</p>
       <form onSubmit={(event) => { event.preventDefault(); if (!invalid) onSubmit(name.trim()); }}>
         <label>New name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label>
         {invalid && <div className="form-error">Names cannot be empty or contain slashes.</div>}
         {error && <div className="form-error" role="alert">{error}</div>}
-        <div className="file-dialog__actions"><button className="secondary-button" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={busy || invalid || name.trim() === item.name}>{busy && <LoaderCircle className="spin" size={16} />} Rename</button></div>
+        <div className="file-dialog__actions"><button className="secondary-button" type="button" disabled={busy || closing} onClick={close}>Cancel</button><button className="primary-button" type="submit" disabled={busy || closing || invalid || name.trim() === item.name}>{busy && <LoaderCircle className="spin" size={16} />} Rename</button></div>
       </form>
     </DialogFrame>
   );
@@ -120,13 +122,14 @@ interface DeleteDialogProps {
 }
 
 export function DeleteDialog({ items, busy, error, onClose, onConfirm }: DeleteDialogProps) {
-  useEscape(busy ? () => {} : onClose);
+  const { closing, close } = useDialogAnimation(onClose);
+  useEscape(busy || closing ? () => {} : close);
   return (
-    <DialogFrame title={`Delete ${items.length === 1 ? "item" : `${items.length} items`}`} icon={<Trash2 size={22} />} danger onClose={busy ? undefined : onClose}>
+    <DialogFrame title={`Delete ${items.length === 1 ? "item" : `${items.length} items`}`} icon={<Trash2 size={22} />} danger onClose={busy || closing ? undefined : close} closing={closing}>
       <p>{items.length === 1 ? <>Permanently delete <strong>{items[0].name}</strong>?</> : "The selected files and folders will be permanently deleted."}</p>
       {items.length > 1 && <ul className="file-dialog__summary">{items.slice(0, 5).map((item) => <li key={item.name}>{item.name}</li>)}{items.length > 5 && <li>and {items.length - 5} more</li>}</ul>}
       {error && <div className="form-error" role="alert">{error}</div>}
-      <div className="file-dialog__actions"><button className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button destructive-primary" disabled={busy} onClick={onConfirm}>{busy && <LoaderCircle className="spin" size={16} />} Delete</button></div>
+      <div className="file-dialog__actions"><button className="secondary-button" disabled={busy || closing} onClick={close}>Cancel</button><button className="primary-button destructive-primary" disabled={busy || closing} onClick={onConfirm}>{busy && <LoaderCircle className="spin" size={16} />} Delete</button></div>
     </DialogFrame>
   );
 }
@@ -148,7 +151,8 @@ export function FolderPickerDialog({ operation, sourcePath, items, passwords, bu
   const [writable, setWritable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  useEscape(busy ? () => {} : onClose);
+  const { closing, close } = useDialogAnimation(onClose);
+  useEscape(busy || closing ? () => {} : close);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -172,7 +176,7 @@ export function FolderPickerDialog({ operation, sourcePath, items, passwords, bu
   const invalidDestination = destinationError(sourcePath, items, path);
   const title = operation === "copy" ? "Copy to folder" : "Move to folder";
   return (
-    <DialogFrame title={title} icon={operation === "copy" ? <Copy size={22} /> : <FolderInput size={22} />} wide onClose={busy ? undefined : onClose}>
+    <DialogFrame title={title} icon={operation === "copy" ? <Copy size={22} /> : <FolderInput size={22} />} wide onClose={busy || closing ? undefined : close} closing={closing}>
       <p>Choose the destination for {items.length === 1 ? <strong>{items[0].name}</strong> : `${items.length} selected items`}.</p>
       <nav className="folder-picker__breadcrumbs" aria-label="Destination path">
         <button onClick={() => setPath("/")} title="Root"><Folder size={16} /> Root</button>
@@ -189,16 +193,16 @@ export function FolderPickerDialog({ operation, sourcePath, items, passwords, bu
       {!loading && !loadError && !writable && <div className="form-error">You cannot write to this destination.</div>}
       {invalidDestination && <div className="form-error">{invalidDestination}</div>}
       {operationError && <div className="form-error" role="alert">{operationError}</div>}
-      <div className="file-dialog__actions"><button className="secondary-button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy || loading || Boolean(loadError) || !writable || Boolean(invalidDestination)} onClick={() => onConfirm(path)}>{busy && <LoaderCircle className="spin" size={16} />} {operation === "copy" ? "Copy here" : "Move here"}</button></div>
+      <div className="file-dialog__actions"><button className="secondary-button" disabled={busy || closing} onClick={close}>Cancel</button><button className="primary-button" disabled={busy || closing || loading || Boolean(loadError) || !writable || Boolean(invalidDestination)} onClick={() => onConfirm(path)}>{busy && <LoaderCircle className="spin" size={16} />} {operation === "copy" ? "Copy here" : "Move here"}</button></div>
     </DialogFrame>
   );
 }
 
-function DialogFrame({ title, icon, danger = false, wide = false, onClose, children }: { title: string; icon: React.ReactNode; danger?: boolean; wide?: boolean; onClose?: () => void; children: React.ReactNode }) {
+function DialogFrame({ title, icon, danger = false, wide = false, closing = false, onClose, children }: { title: string; icon: React.ReactNode; danger?: boolean; wide?: boolean; closing?: boolean; onClose?: () => void; children: React.ReactNode }) {
   return (
-    <div className="dialog-backdrop" role="presentation">
+    <div className={`dialog-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className={`dialog file-dialog${wide ? " file-dialog--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="file-dialog-title">
-        {onClose && <button className="icon-button dialog__close" onClick={onClose} title="Close"><X size={20} /></button>}
+        {onClose && <button className="icon-button dialog__close" onClick={onClose} disabled={closing} title="Close"><X size={20} /></button>}
         <div className={`dialog__icon${danger ? " dialog__icon--danger" : ""}`}>{icon}</div>
         <h2 id="file-dialog-title">{title}</h2>
         {children}

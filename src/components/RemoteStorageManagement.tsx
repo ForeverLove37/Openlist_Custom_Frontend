@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Globe2, LoaderCircle, Network, RefreshCw, X } from "lucide-react";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import { ApiError, listRemoteStorages, updateRemoteStorageTransferMode } from "../lib/api";
 import { storageStatus } from "../lib/storage";
 import type { OpenListStorage } from "../lib/types";
 
 export function RemoteStorageManagement({ connection, onClose }: { connection: OpenListStorage; onClose: () => void }) {
+  const { closing, close } = useDialogAnimation(onClose);
   const [storages, setStorages] = useState<OpenListStorage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,10 +34,10 @@ export function RemoteStorageManagement({ connection, onClose }: { connection: O
   }, [load]);
 
   useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && savingId === null) onClose(); };
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && savingId === null) close(); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose, savingId]);
+  }, [close, savingId]);
 
   const updateMode = async (storage: OpenListStorage, webProxy: boolean, proxyRange = storage.proxy_range) => {
     setSavingId(storage.id);
@@ -53,11 +55,11 @@ export function RemoteStorageManagement({ connection, onClose }: { connection: O
   };
 
   return (
-    <div className="dialog-backdrop remote-storage-backdrop" role="presentation">
+    <div className={`dialog-backdrop remote-storage-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="remote-storage-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-storage-title">
         <header className="storage-dialog__header">
           <div><span className="dialog__icon"><Network size={24} /></span><div><h2 id="remote-storage-title">Remote storage controls</h2><p>{connection.mount_path}</p></div></div>
-          <button className="icon-button" onClick={onClose} disabled={savingId !== null} title="Close"><X size={21} /></button>
+          <button className="icon-button" onClick={close} disabled={savingId !== null || closing} title="Close"><X size={21} /></button>
         </header>
         <div className="remote-storage-content">
           <div className="remote-storage-toolbar">

@@ -261,6 +261,12 @@ export function createThumbnailService({
     return source;
   }
 
+  async function getPreviewSource(session, requestedPath) {
+    const filePath = normalizeOpenListPath(requestedPath);
+    const rawUrl = await fetchRawUrl(session, filePath);
+    return fetchSource(rawUrl, session);
+  }
+
   async function generateThumbnail(session, filePath, type, cacheFile) {
     const rawUrl = await fetchRawUrl(session, filePath);
     const temporaryFile = path.join(cacheDir, `.${path.basename(cacheFile)}-${randomBytes(8).toString("hex")}.tmp`);
@@ -316,5 +322,5 @@ export function createThumbnailService({
     return inFlight.get(flightKey);
   }
 
-  return { createSession, updateSession, getSession, deleteSession, getThumbnail, cacheDir, ffmpegPath, maxRedirects, maxVideoSourceBytes };
+  return { createSession, updateSession, getSession, deleteSession, getThumbnail, getPreviewSource, cacheDir, ffmpegPath, maxRedirects, maxVideoSourceBytes };
 }

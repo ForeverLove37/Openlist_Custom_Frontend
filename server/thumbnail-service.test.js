@@ -63,6 +63,26 @@ describe("thumbnail service helpers", () => {
     }
   });
 
+  it("resolves an authenticated source stream for document previews", async () => {
+    const httpClient = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { id: 7, role: 0 } } })
+        .mockResolvedValueOnce({ status: 200, data: { code: 200, data: { raw_url: "http://openlist.test/docs/readme.pdf" } } }),
+      get: vi.fn().mockResolvedValue({ status: 200, data: Readable.from(Buffer.from("pdf-data")) }),
+    };
+    const service = createThumbnailService({ openListBaseUrl: "http://openlist.test", httpClient });
+    const session = await service.createSession("jwt-token", "/docs");
+    const source = await service.getPreviewSource(service.getSession(session.id), "/docs/readme.pdf");
+    const chunks = [];
+    for await (const chunk of source.data) chunks.push(chunk);
+
+    expect(Buffer.concat(chunks).toString()).toBe("pdf-data");
+    expect(httpClient.get).toHaveBeenCalledWith("http://openlist.test/docs/readme.pdf", expect.objectContaining({
+      responseType: "stream",
+      headers: { Authorization: "jwt-token" },
+    }));
+  });
+
   it("uses a media-specific SVG fallback", () => {
     expect(fallbackSvg("video")).toContain("VIDEO PREVIEW UNAVAILABLE");
     expect(fallbackSvg("image")).toContain("IMAGE PREVIEW UNAVAILABLE");

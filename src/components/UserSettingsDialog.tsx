@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Check, Languages, LoaderCircle, LogIn, LogOut, MonitorCog, Palette, Trash2, UserRound, X } from "lucide-react";
+import { Camera, Check, Cloud, Languages, LoaderCircle, LogIn, LogOut, MonitorCog, Palette, Trash2, UserRound, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ApiError, deleteUserAvatar, uploadUserAvatar } from "../lib/api";
 import { validateCustomImage } from "../lib/customization";
 import type { ThemePreset } from "../lib/theme";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 import type { OpenListUser, UserProfile } from "../lib/types";
 import { UserAvatar } from "./UserAvatar";
 
@@ -13,8 +14,10 @@ interface UserSettingsDialogProps {
   user: OpenListUser | null;
   profile: UserProfile;
   theme: ThemePreset;
+  themeFlowing: boolean;
   initialSection: SettingsSection;
   onThemeChange: (theme: ThemePreset) => void;
+  onThemeFlowingChange: (flowing: boolean) => void;
   onProfileUpdated: (profile: UserProfile) => void;
   onLogin: () => void;
   onLogout: () => void;
@@ -39,20 +42,24 @@ const themeOptions: Array<{ id: ThemePreset; icon: typeof Palette }> = [
   { id: "icloud", icon: Palette },
   { id: "explorer", icon: MonitorCog },
   { id: "notion", icon: Check },
+  { id: "drive", icon: Cloud },
 ];
 
 export function UserSettingsDialog({
   user,
   profile,
   theme,
+  themeFlowing,
   initialSection,
   onThemeChange,
+  onThemeFlowingChange,
   onProfileUpdated,
   onLogin,
   onLogout,
   onClose,
 }: UserSettingsDialogProps) {
   const { i18n, t } = useTranslation();
+  const { closing, close } = useDialogAnimation(onClose);
   const inputRef = useRef<HTMLInputElement>(null);
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [file, setFile] = useState<File | null>(null);
@@ -65,10 +72,10 @@ export function UserSettingsDialog({
   const language = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
 
   useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !saving) onClose(); };
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !saving) close(); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose, saving]);
+  }, [close, saving]);
 
   const chooseFile = (selected?: File) => {
     if (!selected) return;
@@ -108,11 +115,11 @@ export function UserSettingsDialog({
   ];
 
   return (
-    <div className="dialog-backdrop settings-backdrop" role="presentation">
+    <div className={`dialog-backdrop settings-backdrop${closing ? " is-closing" : ""}`} role="presentation">
       <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header className="settings-dialog__header">
           <div><SettingsIcon /><h2 id="settings-title">{t("settings.title")}</h2></div>
-          <button className="icon-button" onClick={onClose} disabled={saving} title={t("common.close")}><X size={20} /></button>
+          <button className="icon-button" onClick={close} disabled={saving || closing} title={t("common.close")}><X size={20} /></button>
         </header>
         <div className="settings-dialog__layout">
           <nav className="settings-dialog__nav" aria-label={t("settings.title")}>
@@ -170,6 +177,10 @@ export function UserSettingsDialog({
                     </button>
                   ))}
                 </div>
+                <label className="theme-motion-control">
+                  <span><strong>{t("settings.flowingBackground")}</strong><small>{t("settings.flowingBackgroundDescription")}</small></span>
+                  <span className="switch-control"><input type="checkbox" checked={themeFlowing} onChange={(event) => onThemeFlowingChange(event.target.checked)} /><span aria-hidden="true" /></span>
+                </label>
               </section>
             )}
           </div>

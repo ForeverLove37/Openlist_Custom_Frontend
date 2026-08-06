@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import Artplayer from "artplayer";
 import { X } from "lucide-react";
+import { useDialogAnimation } from "../hooks/useDialogAnimation";
 
 interface VideoModalProps {
   name: string;
@@ -10,6 +11,7 @@ interface VideoModalProps {
 }
 
 export function VideoModal({ name, source, poster, onClose }: VideoModalProps) {
+  const { closing, close } = useDialogAnimation(onClose);
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export function VideoModal({ name, source, poster, onClose }: VideoModalProps) {
   }, [poster, source]);
 
   useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKey);
@@ -43,13 +45,13 @@ export function VideoModal({ name, source, poster, onClose }: VideoModalProps) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKey);
     };
-  }, [onClose]);
+  }, [close]);
 
   return (
-    <div className="video-modal" role="dialog" aria-modal="true" aria-label={`Video player: ${name}`}>
+    <div className={`video-modal${closing ? " is-closing" : ""}`} role="dialog" aria-modal="true" aria-label={`Video player: ${name}`}>
       <div className="video-modal__header">
         <strong>{name}</strong>
-        <button className="overlay-button" onClick={onClose} title="Close player"><X size={22} /></button>
+        <button className="overlay-button" onClick={close} disabled={closing} title="Close player"><X size={22} /></button>
       </div>
       <div className="video-modal__player" ref={container} />
     </div>
