@@ -19,7 +19,7 @@ export function LoginDialog({ busy, error, needsOtp, onClose, onSubmit }: LoginD
     onSubmit(username.trim(), password, otp.trim());
   };
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="dialog-backdrop" role="presentation">
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <button className="icon-button dialog__close" onClick={onClose} title="Close"><X size={20} /></button>
         <div className="dialog__icon"><KeyRound size={24} /></div>
@@ -49,7 +49,7 @@ export function PasswordDialog({ path, onClose, onSubmit }: PasswordDialogProps)
   const [password, setPassword] = useState("");
   useEscape(onClose);
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="dialog-backdrop" role="presentation">
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="password-title">
         <button className="icon-button dialog__close" onClick={onClose} title="Close"><X size={20} /></button>
         <div className="dialog__icon dialog__icon--amber"><LockKeyhole size={24} /></div>

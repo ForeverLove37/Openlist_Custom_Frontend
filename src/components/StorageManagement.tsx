@@ -272,7 +272,7 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
   const isLocal = values.driver === "Local";
   const isRemote = values.driver === "OpenList" || values.driver === "AList V3";
   return (
-    <div className="dialog-backdrop storage-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+    <div className="dialog-backdrop storage-dialog-backdrop" role="presentation">
       <section className="storage-dialog" role="dialog" aria-modal="true" aria-labelledby="storage-form-title">
         <header className="storage-dialog__header">
           <div><span className="dialog__icon"><FolderCog size={24} /></span><div><h2 id="storage-form-title">{editing ? "Edit storage" : "Add storage"}</h2><p>{editing ? existing?.mount_path : "Connect a storage provider"}</p></div></div>
@@ -343,8 +343,9 @@ export function StorageForm({ existing, saving, onClose, onSave }: StorageFormPr
 
 function ConfirmDeleteDialog({ storage, busy, onCancel, onConfirm }: { storage: OpenListStorage; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}>
+    <div className="dialog-backdrop" role="presentation">
       <section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-storage-title">
+        <button className="icon-button dialog__close" onClick={onCancel} disabled={busy} title="Close" aria-label="Close"><X size={20} /></button>
         <div className="dialog__icon dialog__icon--danger"><Trash2 size={23} /></div>
         <h2 id="delete-storage-title">Delete storage?</h2>
         <p><strong>{storage.mount_path}</strong> will be removed from OpenList. Files at the source are not deleted.</p>

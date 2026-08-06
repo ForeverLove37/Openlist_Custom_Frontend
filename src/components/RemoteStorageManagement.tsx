@@ -53,7 +53,7 @@ export function RemoteStorageManagement({ connection, onClose }: { connection: O
   };
 
   return (
-    <div className="dialog-backdrop remote-storage-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && savingId === null) onClose(); }}>
+    <div className="dialog-backdrop remote-storage-backdrop" role="presentation">
       <section className="remote-storage-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-storage-title">
         <header className="storage-dialog__header">
           <div><span className="dialog__icon"><Network size={24} /></span><div><h2 id="remote-storage-title">Remote storage controls</h2><p>{connection.mount_path}</p></div></div>

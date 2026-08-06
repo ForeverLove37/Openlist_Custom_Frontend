@@ -196,7 +196,7 @@ export function FolderPickerDialog({ operation, sourcePath, items, passwords, bu
 
 function DialogFrame({ title, icon, danger = false, wide = false, onClose, children }: { title: string; icon: React.ReactNode; danger?: boolean; wide?: boolean; onClose?: () => void; children: React.ReactNode }) {
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (onClose && event.target === event.currentTarget) onClose(); }}>
+    <div className="dialog-backdrop" role="presentation">
       <section className={`dialog file-dialog${wide ? " file-dialog--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="file-dialog-title">
         {onClose && <button className="icon-button dialog__close" onClick={onClose} title="Close"><X size={20} /></button>}
         <div className={`dialog__icon${danger ? " dialog__icon--danger" : ""}`}>{icon}</div>

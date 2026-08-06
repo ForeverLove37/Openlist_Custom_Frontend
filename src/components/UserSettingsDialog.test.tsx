@@ -79,4 +79,13 @@ describe("UserSettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(onLogin).toHaveBeenCalledTimes(1);
   });
+
+  it("does not close when the settings backdrop is clicked", () => {
+    const onClose = vi.fn();
+    render(<UserSettingsDialog {...defaultProps} onClose={onClose} />);
+    fireEvent.mouseDown(screen.getByRole("presentation"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTitle("Close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

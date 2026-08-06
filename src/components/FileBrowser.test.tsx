@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileBrowser } from "./FileBrowser";
 import type { OpenListItem } from "../lib/types";
 
@@ -18,6 +18,11 @@ const photo: OpenListItem = {
 };
 
 describe("FileBrowser", () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
   const managementProps = {
     canManage: false,
     canCopyLink: false,
@@ -28,13 +33,28 @@ describe("FileBrowser", () => {
   };
 
   it("renders the API thumbnail and opens the selected item", () => {
+    vi.useFakeTimers();
     const onOpen = vi.fn();
     const { container } = render(
       <FileBrowser items={[photo]} view="grid" loading={false} directoryPath="/" customThumbnailsEnabled onOpen={onOpen} onDownload={vi.fn()} {...managementProps} />,
     );
     expect(container.querySelector("img")).toHaveAttribute("src", photo.thumb);
-    fireEvent.click(screen.getByTitle("Open mountain.jpg"));
+    fireEvent.click(screen.getByTitle("Open mountain.jpg; double-click to download"));
+    vi.advanceTimersByTime(220);
     expect(onOpen).toHaveBeenCalledWith(photo);
+  });
+
+  it("downloads a file on double click without opening its preview", () => {
+    vi.useFakeTimers();
+    const onOpen = vi.fn();
+    const onDownload = vi.fn();
+    render(<FileBrowser items={[photo]} view="grid" loading={false} directoryPath="/" customThumbnailsEnabled onOpen={onOpen} onDownload={onDownload} {...managementProps} />);
+
+    fireEvent.doubleClick(screen.getAllByTitle("Open mountain.jpg; double-click to download")[0]);
+    vi.runAllTimers();
+
+    expect(onDownload).toHaveBeenCalledWith(photo);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it("uses the custom thumbnail endpoint for media without a native thumbnail", () => {

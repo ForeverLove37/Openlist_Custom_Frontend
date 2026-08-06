@@ -46,6 +46,7 @@ import { UserManagement } from "./components/UserManagement";
 import type { SettingsSection } from "./components/UserSettingsDialog";
 import { UploadDialog } from "./components/UploadDialog";
 import { UploadQueue, type UploadEntry } from "./components/UploadQueue";
+import { TextPreviewModal } from "./components/TextPreviewModal";
 import { VideoModal } from "./components/VideoModal";
 import {
   ApiError,
@@ -67,6 +68,7 @@ import {
 } from "./lib/api";
 import {
   directoryPathFromLocation,
+  getDocumentPreviewKind,
   getFileKind,
   joinPath,
   locationFromDirectoryPath,
@@ -78,6 +80,7 @@ import { useDirectory } from "./hooks/useDirectory";
 
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
+interface DocumentPreviewSelection { name: string; source: string; kind: "pdf" | "text" | "markdown" }
 type AppView = "files" | "storages" | "users" | "branding" | "native";
 
 const ADMIN_ROLE = 2;
@@ -129,6 +132,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gallery, setGallery] = useState<GallerySelection | null>(null);
   const [video, setVideo] = useState<VideoSelection | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreviewSelection | null>(null);
   const [mediaLoading, setMediaLoading] = useState("");
   const [notice, setNotice] = useState("");
   const [noticeTone, setNoticeTone] = useState<"error" | "success">("error");
@@ -312,6 +316,11 @@ export default function App() {
     if (!detail?.raw_url) return;
     if (kind === "video") {
       setVideo({ name: item.name, source: detail.raw_url, poster: item.thumb || undefined });
+      return;
+    }
+    const previewKind = getDocumentPreviewKind(item);
+    if (previewKind) {
+      setDocumentPreview({ name: item.name, source: detail.raw_url, kind: previewKind });
       return;
     }
     window.location.assign(detail.raw_url);
@@ -654,6 +663,7 @@ export default function App() {
 
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
       {video && <VideoModal {...video} onClose={() => setVideo(null)} />}
+      {documentPreview && <TextPreviewModal {...documentPreview} onClose={() => setDocumentPreview(null)} />}
       {advancedSearchOpen && <AdvancedSearch initialLocation={currentPath} passwordForPath={(path) => passwords[path] ?? ""} onClose={() => setAdvancedSearchOpen(false)} onNavigate={navigate} />}
       {uploadDialogOpen && canUpload && <UploadDialog path={currentPath} onClose={() => setUploadDialogOpen(false)} onFiles={onDialogFiles} onBrowse={() => fileInputRef.current?.click()} />}
       {mediaLoading && <div className="media-loading" role="status"><LoaderCircle className="spin" size={21} /><span>Preparing {mediaLoading}</span></div>}

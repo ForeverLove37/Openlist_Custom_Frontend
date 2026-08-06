@@ -8,9 +8,10 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 const AUDIO_EXTENSIONS = new Set(["aac", "flac", "m4a", "mp3", "ogg", "opus", "wav", "wma"]);
 const ARCHIVE_EXTENSIONS = new Set(["7z", "bz2", "gz", "rar", "tar", "tgz", "xz", "zip"]);
-const DOCUMENT_EXTENSIONS = new Set(["csv", "doc", "docx", "md", "odt", "pdf", "ppt", "pptx", "rtf", "txt", "xls", "xlsx"]);
+const DOCUMENT_EXTENSIONS = new Set(["csv", "doc", "docx", "markdown", "md", "odt", "pdf", "ppt", "pptx", "rtf", "txt", "xls", "xlsx"]);
 
 export type FileKind = "folder" | "image" | "video" | "audio" | "archive" | "document" | "file";
+export type DocumentPreviewKind = "pdf" | "text" | "markdown";
 
 export function getExtension(name: string) {
   const dot = name.lastIndexOf(".");
@@ -26,6 +27,15 @@ export function getFileKind(item: Pick<OpenListItem, "name" | "is_dir">): FileKi
   if (ARCHIVE_EXTENSIONS.has(extension)) return "archive";
   if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
   return "file";
+}
+
+export function getDocumentPreviewKind(item: Pick<OpenListItem, "name" | "is_dir">): DocumentPreviewKind | null {
+  if (item.is_dir) return null;
+  const extension = getExtension(item.name);
+  if (extension === "pdf") return "pdf";
+  if (extension === "txt") return "text";
+  if (extension === "md" || extension === "markdown") return "markdown";
+  return null;
 }
 
 export function joinPath(parent: string, child: string) {

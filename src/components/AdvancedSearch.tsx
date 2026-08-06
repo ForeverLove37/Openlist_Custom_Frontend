@@ -117,7 +117,7 @@ export function AdvancedSearch({ initialLocation, passwordForPath, onClose, onNa
   };
 
   return (
-    <div className="dialog-backdrop advanced-search-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+    <div className="dialog-backdrop advanced-search-backdrop" role="presentation">
       <section className="dialog advanced-search" role="dialog" aria-modal="true" aria-labelledby="advanced-search-title">
         <button className="icon-button dialog__close" onClick={onClose} title={t("common.close")}><X size={20} /></button>
         <div className="dialog__icon"><SlidersHorizontal size={22} /></div>

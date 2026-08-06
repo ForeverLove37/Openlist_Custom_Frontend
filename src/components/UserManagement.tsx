@@ -194,7 +194,7 @@ export function UserForm({ existing, saving, onClose, onSave }: UserFormProps) {
   };
 
   return (
-    <div className="dialog-backdrop storage-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+    <div className="dialog-backdrop storage-dialog-backdrop" role="presentation">
       <section className="storage-dialog user-dialog" role="dialog" aria-modal="true" aria-labelledby="user-form-title">
         <header className="storage-dialog__header">
           <div><span className="dialog__icon"><UserCog size={24} /></span><div><h2 id="user-form-title">{editing ? "Edit user" : "Add user"}</h2><p>{editing ? existing?.username : "Create a standard OpenList user"}</p></div></div>
@@ -227,7 +227,7 @@ export function UserForm({ existing, saving, onClose, onSave }: UserFormProps) {
 }
 
 function ConfirmDeleteUser({ user, busy, onCancel, onConfirm }: { user: ManagedUser; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
-  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}><section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title"><div className="dialog__icon dialog__icon--danger"><Trash2 size={23} /></div><h2 id="delete-user-title">Delete user?</h2><p><strong>{user.username}</strong> will lose access to OpenList. Their source files will not be deleted.</p><div className="confirm-dialog__actions"><button className="secondary-button" onClick={onCancel} disabled={busy}>Cancel</button><button className="delete-button" onClick={onConfirm} disabled={busy}>{busy && <LoaderCircle className="spin" size={17} />} Delete user</button></div></section></div>;
+  return <div className="dialog-backdrop" role="presentation"><section className="dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title"><button className="icon-button dialog__close" onClick={onCancel} disabled={busy} title="Close" aria-label="Close"><X size={20} /></button><div className="dialog__icon dialog__icon--danger"><Trash2 size={23} /></div><h2 id="delete-user-title">Delete user?</h2><p><strong>{user.username}</strong> will lose access to OpenList. Their source files will not be deleted.</p><div className="confirm-dialog__actions"><button className="secondary-button" onClick={onCancel} disabled={busy}>Cancel</button><button className="delete-button" onClick={onConfirm} disabled={busy}>{busy && <LoaderCircle className="spin" size={17} />} Delete user</button></div></section></div>;
 }
 
 function UserLoading() {

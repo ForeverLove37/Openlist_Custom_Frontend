@@ -9,6 +9,7 @@ const resources = {
     translation: {
       nav: { files: "My files", settings: "Settings", administration: "Administration" },
       common: { cancel: "Cancel", close: "Close", clear: "Clear", refresh: "Refresh", upload: "Upload", search: "Search", language: "Language" },
+      preview: { pdf: "PDF preview", text: "Text preview", markdown: "Markdown preview", loading: "Loading preview", unavailable: "This file could not be previewed.", download: "Download file" },
       files: {
         searchCurrent: "Search in {{name}}",
         advancedSearch: "Advanced search",
@@ -40,6 +41,7 @@ const resources = {
     translation: {
       nav: { files: "我的文件", settings: "设置", administration: "管理后台" },
       common: { cancel: "取消", close: "关闭", clear: "清除", refresh: "刷新", upload: "上传", search: "搜索", language: "语言" },
+      preview: { pdf: "PDF 预览", text: "文本预览", markdown: "Markdown 预览", loading: "正在加载预览", unavailable: "无法预览此文件。", download: "下载文件" },
       files: {
         searchCurrent: "在 {{name}} 中搜索",
         advancedSearch: "高级搜索",

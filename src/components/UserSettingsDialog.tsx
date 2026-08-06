@@ -108,7 +108,7 @@ export function UserSettingsDialog({
   ];
 
   return (
-    <div className="dialog-backdrop settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+    <div className="dialog-backdrop settings-backdrop" role="presentation">
       <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header className="settings-dialog__header">
           <div><SettingsIcon /><h2 id="settings-title">{t("settings.title")}</h2></div>

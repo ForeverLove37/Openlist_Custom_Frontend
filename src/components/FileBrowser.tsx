@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Download, ImageOff, MoreHorizontal } from "lucide-react";
 import { FileIcon } from "./FileIcon";
 import { formatDate, formatSize, getFileKind, thumbnailSource } from "../lib/files";
@@ -47,6 +48,35 @@ export function FileBrowser({
   onToggleAll,
   onOpenActions,
 }: FileBrowserProps) {
+  const clickTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+  }, []);
+
+  const handlePrimaryClick = (item: OpenListItem) => {
+    if (item.is_dir) {
+      onOpen(item);
+      return;
+    }
+    if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      onOpen(item);
+    }, 220);
+  };
+
+  const handlePrimaryDoubleClick = (event: React.MouseEvent, item: OpenListItem) => {
+    if (item.is_dir) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (clickTimer.current !== null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    onDownload(item);
+  };
+
   if (loading) return <LoadingGrid view={view} />;
 
   const canActOn = (item: OpenListItem) => canManage || (canCopyLink && !item.is_dir);
@@ -89,7 +119,7 @@ export function FileBrowser({
                 <td>
                   <span className="file-table__name-cell">
                     {canActOn(item) && <input type="checkbox" checked={selected} onChange={() => onToggleSelection(item)} aria-label={`Select ${item.name}`} />}
-                    <button className="file-name-button" onClick={() => onOpen(item)} title={`Open ${item.name}`}>
+                    <button className="file-name-button" onClick={() => handlePrimaryClick(item)} onDoubleClick={(event) => handlePrimaryDoubleClick(event, item)} title={`Open ${item.name}; double-click to download`}>
                       {thumbnail ? <img className="file-table__thumbnail" src={thumbnail} alt="" loading="lazy" decoding="async" /> : <FileIcon item={item} />}
                       <span>{item.name}</span>
                     </button>
@@ -121,7 +151,7 @@ export function FileBrowser({
           <article className={`file-card${canActOn(item) ? " file-card--manageable" : ""}${selectedNames.has(item.name) ? " file-card--selected" : ""}`} key={item.name} onContextMenu={(event) => openContextMenu(event, item)}>
             {canActOn(item) && <label className="file-card__select" title={`Select ${item.name}`}><input type="checkbox" checked={selectedNames.has(item.name)} onChange={() => onToggleSelection(item)} aria-label={`Select ${item.name}`} /></label>}
             {canActOn(item) && <button className="icon-button file-card__more" onClick={(event) => openButtonMenu(event, item)} title={`Actions for ${item.name}`}><MoreHorizontal size={18} /></button>}
-            <button className="file-card__open" onClick={() => onOpen(item)} title={`Open ${item.name}`}>
+            <button className="file-card__open" onClick={() => handlePrimaryClick(item)} onDoubleClick={(event) => handlePrimaryDoubleClick(event, item)} title={`Open ${item.name}; double-click to download`}>
               <span className="file-card__title">
                 <FileIcon item={item} size={19} />
                 <span>{item.name}</span>

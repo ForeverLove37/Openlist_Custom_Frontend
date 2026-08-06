@@ -37,6 +37,16 @@ describe("UploadDialog", () => {
     expect(onFiles).toHaveBeenCalledWith([file]);
     expect(dropZone).not.toHaveClass("upload-drop-zone--active");
   });
+
+  it("does not close when the backdrop is clicked", () => {
+    const onClose = vi.fn();
+    render(<UploadDialog path="/Documents" onClose={onClose} onFiles={vi.fn()} onBrowse={vi.fn()} />);
+
+    fireEvent.mouseDown(screen.getByRole("presentation"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
 
 function screenElement(renderView: () => void) {

@@ -45,7 +45,7 @@ export function UploadDialog({ path, onClose, onFiles, onBrowse }: UploadDialogP
   };
 
   return (
-    <div className="dialog-backdrop upload-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="dialog-backdrop upload-dialog-backdrop" role="presentation">
       <section className="dialog upload-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-dialog-title">
         <header className="upload-dialog__header">
           <div className="dialog__icon"><UploadCloud size={23} /></div>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   directoryPathFromLocation,
   formatSize,
+  getDocumentPreviewKind,
   getFileKind,
   joinPath,
   locationFromDirectoryPath,
@@ -29,6 +30,14 @@ describe("file helpers", () => {
     expect(getFileKind(item("photo.WEBP"))).toBe("image");
     expect(getFileKind(item("clip.mkv"))).toBe("video");
     expect(getFileKind(item("Projects", true))).toBe("folder");
+  });
+
+  it("recognizes the supported document preview formats", () => {
+    expect(getDocumentPreviewKind(item("guide.pdf"))).toBe("pdf");
+    expect(getDocumentPreviewKind(item("notes.TXT"))).toBe("text");
+    expect(getDocumentPreviewKind(item("README.markdown"))).toBe("markdown");
+    expect(getDocumentPreviewKind(item("folder", true))).toBeNull();
+    expect(getDocumentPreviewKind(item("slides.pptx"))).toBeNull();
   });
 
   it("keeps folders first while sorting files naturally", () => {
