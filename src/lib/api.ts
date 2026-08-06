@@ -101,7 +101,7 @@ export function getFile(path: string, password = "", signal?: AbortSignal) {
 }
 
 export function documentPreviewUrl(path: string, kind: "pdf" | "text" | "markdown") {
-  return `/preview?path=${encodeURIComponent(path)}&kind=${encodeURIComponent(kind)}`;
+  return `/api/custom/preview?path=${encodeURIComponent(path)}&kind=${encodeURIComponent(kind)}`;
 }
 
 export function searchFiles({ parent, keywords, scope, page = 1, perPage = 100, password = "" }: SearchRequest, signal?: AbortSignal) {
