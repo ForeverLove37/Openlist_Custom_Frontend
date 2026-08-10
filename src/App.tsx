@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AdvancedSearch } from "./components/AdvancedSearch";
+import { AndroidReleaseManagement } from "./components/AndroidReleaseManagement";
 import { BrandingManagement } from "./components/BrandingManagement";
 import { LoginDialog, PasswordDialog } from "./components/Dialogs";
 import { FileBrowser } from "./components/FileBrowser";
@@ -85,7 +86,7 @@ import { useDirectory } from "./hooks/useDirectory";
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
 interface DocumentPreviewSelection { name: string; source: string; downloadSource: string; kind: "pdf" | "text" | "markdown" }
-type AppView = "files" | "storages" | "users" | "branding" | "native";
+type AppView = "files" | "storages" | "users" | "branding" | "native" | "android";
 
 const ADMIN_ROLE = 2;
 const DEFAULT_BRANDING: FrontendBranding = { name: "OpenList Drive", logoUrl: "", iconUrl: "" };
@@ -100,11 +101,12 @@ function viewFromLocation(): AppView {
   if (window.location.pathname === "/admin/users") return "users";
   if (window.location.pathname === "/admin/branding") return "branding";
   if (window.location.pathname === "/admin/native") return "native";
+  if (window.location.pathname === "/admin/android") return "android";
   return "files";
 }
 
 function isAdminView(view: AppView) {
-  return view === "storages" || view === "users" || view === "branding" || view === "native";
+  return view === "storages" || view === "users" || view === "branding" || view === "native" || view === "android";
 }
 
 async function copyToClipboard(value: string) {
@@ -273,6 +275,7 @@ export default function App() {
       users: "/admin/users",
       branding: "/admin/branding",
       native: "/admin/native",
+      android: "/admin/android",
     };
     window.history.pushState({}, "", routes[view]);
     setAppView(view);
@@ -590,7 +593,7 @@ export default function App() {
             <nav className="breadcrumbs" key={appView} aria-label="Breadcrumb">
               <button onClick={() => navigate("/")} title={t("nav.files")}><HardDrive size={19} /><span>{t("nav.files")}</span></button>
               <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin("storages")}>{t("nav.administration")}</button></span>
-              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "branding" ? t("settings.branding") : appView === "native" ? t("settings.native") : t("settings.storage")}</button></span>
+              <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "branding" ? t("settings.branding") : appView === "native" ? t("settings.native") : appView === "android" ? "Android app" : t("settings.storage")}</button></span>
             </nav>
           )}
         </div>
@@ -841,5 +844,5 @@ function AdminStorageGate({
       </div>
     );
   }
-  return <><nav className="admin-tabs" aria-label={t("nav.administration")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "branding" ? "active" : ""} onClick={() => onSelectView("branding")} aria-current={view === "branding" ? "page" : undefined}>{t("settings.branding")}</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button></nav>{view === "users" ? <UserManagement /> : view === "branding" ? <BrandingManagement branding={branding} onUpdated={onBrandingUpdated} /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
+  return <><nav className="admin-tabs" aria-label={t("nav.administration")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "branding" ? "active" : ""} onClick={() => onSelectView("branding")} aria-current={view === "branding" ? "page" : undefined}>{t("settings.branding")}</button><button className={view === "android" ? "active" : ""} onClick={() => onSelectView("android")} aria-current={view === "android" ? "page" : undefined}>Android app</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button></nav>{view === "users" ? <UserManagement /> : view === "branding" ? <BrandingManagement branding={branding} onUpdated={onBrandingUpdated} /> : view === "android" ? <AndroidReleaseManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
 }

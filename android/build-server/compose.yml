@@ -1,0 +1,31 @@
+name: openlist-drive-android-builder
+
+services:
+  builder:
+    image: openlist-drive-android-builder:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:8091"
+    environment:
+      PORT: 8091
+      RELEASE_ROOT: /var/lib/openlist-drive/android/releases
+      CONFIG_ROOT: /var/lib/openlist-drive/android/config
+      WORK_ROOT: /var/lib/openlist-drive/android/work
+      GRADLE_CACHE_ROOT: /var/lib/openlist-drive/android/gradle-cache
+      SOURCE_REPO: https://github.com/ForeverLove37/Openlist_Custom_Frontend.git
+      SOURCE_REF: main
+      BUILDER_IMAGE: openlist-drive-android-toolchain:latest
+      ADMIN_TOKEN: ${ANDROID_BUILD_SERVICE_TOKEN:?Set ANDROID_BUILD_SERVICE_TOKEN}
+      DRIVE_URL: ${ANDROID_DRIVE_URL:-https://drive.erailab.com}
+    volumes:
+      - /var/lib/openlist-drive/android/releases:/var/lib/openlist-drive/android/releases
+      - /var/lib/openlist-drive/android/config:/var/lib/openlist-drive/android/config
+      - /var/lib/openlist-drive/android/work:/var/lib/openlist-drive/android/work
+      - /var/lib/openlist-drive/android/gradle-cache:/var/lib/openlist-drive/android/gradle-cache
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m

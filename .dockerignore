@@ -10,6 +10,8 @@ coverage
 dist
 docs
 node_modules
+android/.gradle
+android/**/build
 *.log
 *.local
 npm-debug.log*

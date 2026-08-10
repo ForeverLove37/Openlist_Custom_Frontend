@@ -4,6 +4,14 @@ OpenList Drive is a React file browser with a lightweight Node.js BFF. It provid
 
 For instructions on using the deployed application, see the [OpenList Drive User Guide](docs/USER_GUIDE.md).
 
+## Android application and releases
+
+The repository includes an Android WebView client in `android/` and a dedicated remote release service in `android/build-server/`. Android release builds are queued from the Web administration panel and run in an isolated toolchain container on the configured build host. Every APK is stored in one release directory, and administrators can select which completed version is advertised as latest.
+
+Configure the Web BFF with `ANDROID_BUILD_SERVICE_URL`, `ANDROID_BUILD_SERVICE_TOKEN`, and `ANDROID_DOWNLOAD_BASE_URL`. The token is server-only and must never be included in frontend source or browser requests. The included Nginx configurations under `deploy/nginx/dl-chatapp.zengjunjie.com.*.conf` expose public release metadata and APK downloads while forwarding authenticated builder operations from the BFF.
+
+See the [Android client guide](android/README.md) and [remote builder guide](android/build-server/README.md) for details. Android builds must run on the dedicated build server, not on the Web host.
+
 ## Docker deployment (recommended)
 
 The published image contains the React SPA, Node.js BFF, Nginx, Sharp, and FFmpeg:

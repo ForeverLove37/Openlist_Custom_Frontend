@@ -7,3 +7,8 @@ coverage/
 *.local
 .DS_Store
 npm-debug.log*
+/android-builder.env
+/android/.gradle/
+/android/**/build/
+*.keystore
+*.jks

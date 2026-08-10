@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.OpenListDrive" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#0f766e</item>
+        <item name="android:navigationBarColor">#0b2422</item>
+        <item name="android:statusBarColor">#e2fbf2</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

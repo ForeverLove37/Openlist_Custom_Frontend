@@ -51,6 +51,7 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node server.js ./server.js
 COPY --chown=node:node server ./server
+COPY --chown=node:node android ./android
 COPY --chown=node:node docker ./docker
 
 RUN chmod 0755 /app/docker/entrypoint.sh \

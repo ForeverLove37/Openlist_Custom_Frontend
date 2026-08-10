@@ -99,6 +99,31 @@ export interface UserProfile {
   avatarUrl: string;
 }
 
+export interface AndroidRelease {
+  version: string;
+  versionCode: number;
+  filename: string;
+  downloadUrl: string;
+  size: number;
+  sha256: string;
+  createdAt: string;
+  published: boolean;
+}
+
+export interface AndroidReleasePage {
+  latestVersion: string;
+  releases: AndroidRelease[];
+}
+
+export interface AndroidBuildJob {
+  id: string;
+  status: "queued" | "building" | "complete" | "failed";
+  message: string;
+  version: string;
+  versionCode: number;
+  release?: AndroidRelease;
+}
+
 export type BrandingAssetKind = "logo" | "icon";
 
 export type StorageDriver = "Local" | "WebDav" | "OpenList" | "AList V3";

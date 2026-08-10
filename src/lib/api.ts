@@ -1,5 +1,7 @@
 import type {
   ApiEnvelope,
+  AndroidBuildJob,
+  AndroidReleasePage,
   DirectoryData,
   FileDetail,
   FrontendBranding,
@@ -228,6 +230,34 @@ export function updateUser(user: ManagedUser) {
 
 export function deleteUser(id: number) {
   return request<unknown>(`/admin/user/delete?id=${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+export function listAndroidReleases(signal?: AbortSignal) {
+  return request<AndroidReleasePage>("/custom/admin/android/releases", {}, signal);
+}
+
+export function latestAndroidRelease(signal?: AbortSignal) {
+  return request<{ latest: AndroidReleasePage["releases"][number] | null }>("/custom/android/latest", {}, signal);
+}
+
+export function startAndroidBuild(values: { version?: string; versionCode?: number; driveUrl?: string; ref?: string }) {
+  return request<{ job: AndroidBuildJob }>("/custom/admin/android/build", { method: "POST", body: JSON.stringify(values) });
+}
+
+export function getAndroidBuildStatus(id: string, signal?: AbortSignal) {
+  return request<{ job: AndroidBuildJob }>(`/custom/admin/android/build/${encodeURIComponent(id)}`, {}, signal);
+}
+
+export function publishAndroidRelease(version: string) {
+  return request<{ latest: AndroidReleasePage["releases"][number] }>(`/custom/admin/android/releases/${encodeURIComponent(version)}/publish`, { method: "POST", body: "{}" });
+}
+
+export function uploadAndroidIcon(file: File) {
+  return uploadCustomImage<unknown>("/custom/admin/android/icon", file);
+}
+
+export function deleteAndroidIcon() {
+  return request<unknown>("/custom/admin/android/icon", { method: "DELETE" });
 }
 
 export function syncThumbnailSession(path: string, password = "") {

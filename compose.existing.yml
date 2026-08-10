@@ -15,6 +15,9 @@ services:
       THUMBNAIL_SESSION_TTL_MS: "${THUMBNAIL_SESSION_TTL_MS:-1800000}"
       THUMBNAIL_MAX_REDIRECTS: "${THUMBNAIL_MAX_REDIRECTS:-5}"
       THUMBNAIL_VIDEO_SOURCE_MAX_BYTES: "${THUMBNAIL_VIDEO_SOURCE_MAX_BYTES:-268435456}"
+      ANDROID_BUILD_SERVICE_URL: "${ANDROID_BUILD_SERVICE_URL:-}"
+      ANDROID_BUILD_SERVICE_TOKEN: "${ANDROID_BUILD_SERVICE_TOKEN:-}"
+      ANDROID_DOWNLOAD_BASE_URL: "${ANDROID_DOWNLOAD_BASE_URL:-https://dl-chatapp.zengjunjie.com}"
     volumes:
       - drive_customization:/var/lib/openlist-drive/customization
       - drive_thumbnails:/var/cache/openlist-drive/thumbnails

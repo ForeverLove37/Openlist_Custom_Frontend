@@ -190,6 +190,18 @@ Administrators can select **Administration**, then **Branding** to change the fr
 
 Administrators can select **Administration**, then **Native Management**, to open the original OpenList management interface inside the custom app. The panel uses the current verified administrator session and does not expose the native OpenList port to the public internet. If the administrator session expires, sign in again through the custom app and reopen the tab.
 
+## Manage Android releases
+
+Android release management is available only to OpenList administrators.
+
+1. Select **Administration** in the sidebar, then select the **Android** tab.
+2. Enter a unique version and positive version code, then select **Start remote build**. The status panel updates while the dedicated server downloads the current source and performs the full Android build.
+3. Download any completed APK from the release library, or select **Publish** to advertise that version as the latest release.
+
+All APKs are retained together on the download server. Publishing changes only the version returned by the latest-release endpoint; it does not rebuild or delete older APKs.
+
+To change the app icon, choose a PNG, JPEG, WebP, or GIF file up to 5 MB and save it before starting a build. The new icon is applied to subsequent APKs and does not modify releases that already exist.
+
 ## Manage users
 
 User management is available only to OpenList administrators.

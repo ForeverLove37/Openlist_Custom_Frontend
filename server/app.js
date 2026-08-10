@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import express from "express";
+import { AndroidReleaseError, createAndroidReleaseService } from "./android-release-service.js";
 import { CustomizationError, createCustomizationService } from "./customization-service.js";
 import { RemoteStorageError, createRemoteStorageService } from "./remote-storage-service.js";
 import { ThumbnailAccessError, createThumbnailService, fallbackSvg } from "./thumbnail-service.js";
@@ -45,6 +46,7 @@ export function createApp({
   thumbnailService = createThumbnailService(),
   remoteStorageService = createRemoteStorageService(),
   customizationService = createCustomizationService(),
+  androidReleaseService = createAndroidReleaseService(),
   production = process.env.NODE_ENV === "production",
 } = {}) {
   const app = express();
@@ -63,7 +65,7 @@ export function createApp({
   const adminSession = (request) => requireAdminSession(thumbnailService, sessionId(request));
   const userSession = (request) => requireUserSession(thumbnailService, sessionId(request));
   const customizationError = (response, error, fallbackMessage) => {
-    const status = error instanceof ThumbnailAccessError || error instanceof CustomizationError ? error.status : 500;
+    const status = error instanceof ThumbnailAccessError || error instanceof CustomizationError || error instanceof AndroidReleaseError ? error.status : 500;
     response.status(status).json({ code: status, message: error.message || fallbackMessage, data: null });
   };
 
@@ -184,6 +186,78 @@ export function createApp({
       sendEnvelope(response, await customizationService.deleteAvatar(session.userId));
     } catch (error) {
       customizationError(response, error, "Could not remove your avatar.");
+    }
+  });
+
+  app.get("/api/custom/android/releases", async (_request, response) => {
+    try {
+      response.set("Cache-Control", "no-store");
+      sendEnvelope(response, await androidReleaseService.list());
+    } catch (error) {
+      customizationError(response, error, "Could not load Android releases.");
+    }
+  });
+
+  app.get("/api/custom/android/latest", async (_request, response) => {
+    try {
+      response.set("Cache-Control", "no-store");
+      sendEnvelope(response, await androidReleaseService.latest());
+    } catch (error) {
+      customizationError(response, error, "Could not load the latest Android release.");
+    }
+  });
+
+  app.get("/api/custom/admin/android/releases", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await androidReleaseService.list());
+    } catch (error) {
+      customizationError(response, error, "Could not load Android releases.");
+    }
+  });
+
+  app.post("/api/custom/admin/android/build", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await androidReleaseService.triggerBuild(request.body || {}));
+    } catch (error) {
+      customizationError(response, error, "Could not start the Android build.");
+    }
+  });
+
+  app.get("/api/custom/admin/android/build/:id", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await androidReleaseService.buildStatus(request.params.id));
+    } catch (error) {
+      customizationError(response, error, "Could not load the Android build status.");
+    }
+  });
+
+  app.post("/api/custom/admin/android/releases/:version/publish", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await androidReleaseService.publish(request.params.version));
+    } catch (error) {
+      customizationError(response, error, "Could not publish the Android release.");
+    }
+  });
+
+  app.put("/api/custom/admin/android/icon", imageBody, async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await androidReleaseService.uploadIcon(request.body, request.get("Content-Type") || ""));
+    } catch (error) {
+      customizationError(response, error, "Could not update the Android app icon.");
+    }
+  });
+
+  app.delete("/api/custom/admin/android/icon", async (request, response) => {
+    try {
+      adminSession(request);
+      sendEnvelope(response, await androidReleaseService.deleteIcon());
+    } catch (error) {
+      customizationError(response, error, "Could not remove the Android app icon.");
     }
   });
 
