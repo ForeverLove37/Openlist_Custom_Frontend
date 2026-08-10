@@ -75,7 +75,7 @@ describe("customization HTTP routes", () => {
       const image = Uint8Array.from([137, 80, 78, 71]);
       const avatar = await fetch(`${baseUrl}/api/custom/profile/avatar`, {
         method: "PUT",
-        headers: { ...sessionCookie("user-session"), "Content-Type": "image/png" },
+        headers: { Cookie: `legacy-cookie=%ZZ; ${THUMBNAIL_SESSION_COOKIE}=user-session`, "Content-Type": "image/png" },
         body: image,
       });
       expect(avatar.status).toBe(200);

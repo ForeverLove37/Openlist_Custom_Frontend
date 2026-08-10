@@ -8,10 +8,19 @@ import { ThumbnailAccessError, createThumbnailService, fallbackSvg } from "./thu
 
 export const THUMBNAIL_SESSION_COOKIE = "openlist_thumb_session";
 
+function decodeCookieValue(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // A malformed unrelated cookie must not prevent the custom session from being read.
+    return value;
+  }
+}
+
 function readCookies(header = "") {
   return Object.fromEntries(header.split(";").map((pair) => {
     const index = pair.indexOf("=");
-    return index < 0 ? ["", ""] : [pair.slice(0, index).trim(), decodeURIComponent(pair.slice(index + 1))];
+    return index < 0 ? ["", ""] : [pair.slice(0, index).trim(), decodeCookieValue(pair.slice(index + 1))];
   }).filter(([name]) => name));
 }
 
