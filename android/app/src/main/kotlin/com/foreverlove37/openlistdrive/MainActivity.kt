@@ -13,11 +13,16 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+import kotlin.math.max
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
@@ -30,14 +35,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         webView = WebView(this).apply {
-            fitsSystemWindows = true
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = true
             settings.mediaPlaybackRequiresUserGesture = false
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = false
+            settings.textZoom = 100
+            settings.setSupportZoom(false)
+            overScrollMode = View.OVER_SCROLL_NEVER
             CookieManager.getInstance().setAcceptCookie(true)
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
@@ -65,7 +74,27 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this@MainActivity, "Download started", Toast.LENGTH_SHORT).show()
             })
         }
-        setContentView(webView)
+        val content = FrameLayout(this).apply {
+            addView(webView, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, windowInsets ->
+            val systemBars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.updatePadding(
+                left = systemBars.left,
+                top = systemBars.top,
+                right = systemBars.right,
+                bottom = max(systemBars.bottom, ime.bottom),
+            )
+            windowInsets
+        }
+        setContentView(content)
+        ViewCompat.requestApplyInsets(content)
         if (savedInstanceState == null) webView.loadUrl(BuildConfig.DRIVE_URL)
         else webView.restoreState(savedInstanceState)
 
