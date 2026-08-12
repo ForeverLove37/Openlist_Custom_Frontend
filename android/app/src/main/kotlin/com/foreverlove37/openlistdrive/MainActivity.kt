@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
             settings.loadWithOverviewMode = false
             settings.textZoom = 100
             settings.setSupportZoom(false)
+            settings.userAgentString = "${settings.userAgentString} OpenListDriveAndroid/${BuildConfig.VERSION_NAME}"
             overScrollMode = View.OVER_SCROLL_NEVER
             CookieManager.getInstance().setAcceptCookie(true)
             webViewClient = object : WebViewClient() {

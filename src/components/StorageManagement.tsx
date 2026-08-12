@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -8,6 +8,7 @@ import {
   HardDrive,
   LoaderCircle,
   Network,
+  MoreVertical,
   Pencil,
   Plus,
   RefreshCw,
@@ -31,9 +32,11 @@ import { RemoteStorageManagement } from "./RemoteStorageManagement";
 
 interface StorageManagementProps {
   onStorageChanged: () => void;
+  createRequest?: number;
 }
 
-export function StorageManagement({ onStorageChanged }: StorageManagementProps) {
+export function StorageManagement({ onStorageChanged, createRequest = 0 }: StorageManagementProps) {
+  const handledCreateRequest = useRef(createRequest);
   const [storages, setStorages] = useState<OpenListStorage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -63,6 +66,11 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (createRequest > handledCreateRequest.current) setFormStorage(null);
+    handledCreateRequest.current = createRequest;
+  }, [createRequest]);
 
   const edit = async (storage: OpenListStorage) => {
     setActionId(storage.id);
@@ -148,7 +156,7 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
           <button className="icon-button bordered-button" onClick={() => void load()} disabled={loading} title="Refresh storages">
             <RefreshCw className={loading ? "spin" : ""} size={18} />
           </button>
-          <button className="primary-button" onClick={() => setFormStorage(null)}><Plus size={18} /> Add storage</button>
+          <button className="primary-button desktop-primary-action" onClick={() => setFormStorage(null)}><Plus size={18} /> Add storage</button>
         </div>
       </div>
 
@@ -162,7 +170,7 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
           <Database size={38} />
           <h2>No storage connected</h2>
           <p>Add a Local or WebDAV storage to make files available in My files.</p>
-          <button className="primary-button" onClick={() => setFormStorage(null)}><Plus size={18} /> Add storage</button>
+          <button className="primary-button desktop-primary-action" onClick={() => setFormStorage(null)}><Plus size={18} /> Add storage</button>
         </div>
       ) : (
         <div className="storage-list">
@@ -180,7 +188,7 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
                   <span className={`storage-driver-icon storage-driver-icon--${remote ? "remote" : storage.driver === "WebDav" ? "webdav" : "local"}`}>
                     {remote ? <Server size={21} /> : storage.driver === "WebDav" ? <Globe2 size={21} /> : <HardDrive size={21} />}
                   </span>
-                  <span><strong>{storage.mount_path}</strong>{storage.remark && <small>{storage.remark}</small>}</span>
+                  <span><strong>{storage.mount_path}</strong>{storage.remark && <small>{storage.remark}</small>}<small className="android-row-supporting">{storage.driver} · {status.label} · {storage.driver === "Local" ? "Local" : storage.web_proxy ? "Native Proxy" : "302 Redirect"}</small></span>
                 </div>
                 <div className="storage-cell" data-label="Driver"><span>{storage.driver}</span></div>
                 <div className="storage-cell storage-status-cell" data-label="Status">
@@ -194,11 +202,12 @@ export function StorageManagement({ onStorageChanged }: StorageManagementProps) 
                     <span aria-hidden="true" />
                     <span className="sr-only">{storage.disabled ? "Enable" : "Disable"} {storage.mount_path}</span>
                   </label>
-                  {remote && <button className="icon-button subtle-button" onClick={() => setRemoteTarget(storage)} disabled={busy} title={`Manage downstream storages in ${storage.mount_path}`}><Network size={18} /></button>}
+                  <span className="desktop-row-actions">{remote && <button className="icon-button subtle-button" onClick={() => setRemoteTarget(storage)} disabled={busy} title={`Manage downstream storages in ${storage.mount_path}`}><Network size={18} /></button>}
                   <button className="icon-button subtle-button" onClick={() => void edit(storage)} disabled={busy || !supported} title={supported ? `Edit ${storage.mount_path}` : `${storage.driver} editing is not supported here`}>
                     {busy ? <LoaderCircle className="spin" size={18} /> : <Pencil size={18} />}
                   </button>
-                  <button className="icon-button danger-button" onClick={() => setDeleteTarget(storage)} disabled={busy} title={`Delete ${storage.mount_path}`}><Trash2 size={18} /></button>
+                  <button className="icon-button danger-button" onClick={() => setDeleteTarget(storage)} disabled={busy} title={`Delete ${storage.mount_path}`}><Trash2 size={18} /></button></span>
+                  <details className="android-row-overflow"><summary className="android-icon-button" title={`More actions for ${storage.mount_path}`}><MoreVertical size={22} /></summary><div>{remote && <button onClick={() => setRemoteTarget(storage)} disabled={busy}><Network size={19} />Downstream storage</button>}<button onClick={() => void edit(storage)} disabled={busy || !supported}><Pencil size={19} />Edit</button><button className="danger-button" onClick={() => setDeleteTarget(storage)} disabled={busy}><Trash2 size={19} />Delete</button></div></details>
                 </div>
               </article>
             );

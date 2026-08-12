@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
+  ArrowLeft,
   ArrowDownAZ,
+  ArrowUpDown,
   CalendarClock,
   Check,
   ChevronDown,
@@ -13,10 +15,14 @@ import {
   Grid2X2,
   HardDrive,
   List,
+  Languages,
   LoaderCircle,
   LogIn,
   LogOut,
   Menu,
+  MoreVertical,
+  Palette,
+  Plus,
   RefreshCw,
   Search,
   Settings2,
@@ -73,6 +79,7 @@ import {
 } from "./lib/api";
 import {
   directoryPathFromLocation,
+  formatSize,
   getDocumentPreviewKind,
   getFileKind,
   joinPath,
@@ -86,7 +93,7 @@ import { useDirectory } from "./hooks/useDirectory";
 interface VideoSelection { name: string; source: string; poster?: string }
 interface GallerySelection { images: OpenListItem[]; index: number }
 interface DocumentPreviewSelection { name: string; source: string; downloadSource: string; kind: "pdf" | "text" | "markdown" }
-type AppView = "files" | "storages" | "users" | "branding" | "native" | "android";
+type AppView = "files" | "transfers" | "settings" | "storages" | "users" | "branding" | "native" | "android";
 
 const ADMIN_ROLE = 2;
 const DEFAULT_BRANDING: FrontendBranding = { name: "OpenList Drive", logoUrl: "", iconUrl: "" };
@@ -97,6 +104,8 @@ const UserSettingsDialog = lazy(async () => {
 });
 
 function viewFromLocation(): AppView {
+  if (window.location.pathname === "/transfers") return "transfers";
+  if (window.location.pathname === "/settings") return "settings";
   if (window.location.pathname === "/admin/storages") return "storages";
   if (window.location.pathname === "/admin/users") return "users";
   if (window.location.pathname === "/admin/branding") return "branding";
@@ -107,6 +116,11 @@ function viewFromLocation(): AppView {
 
 function isAdminView(view: AppView) {
   return view === "storages" || view === "users" || view === "branding" || view === "native" || view === "android";
+}
+
+function isAndroidApp() {
+  return document.documentElement.dataset.androidApp === "true"
+    || navigator.userAgent.includes("OpenListDriveAndroid/");
 }
 
 async function copyToClipboard(value: string) {
@@ -128,6 +142,7 @@ async function copyToClipboard(value: string) {
 
 export default function App() {
   const { t } = useTranslation();
+  const androidApp = isAndroidApp();
   const [appView, setAppView] = useState<AppView>(viewFromLocation);
   const [currentPath, setCurrentPath] = useState(() => directoryPathFromLocation(window.location.pathname));
   const [passwords, setPasswords] = useState<Record<string, string>>({});
@@ -135,6 +150,8 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [query, setQuery] = useState("");
+  const [androidSearchOpen, setAndroidSearchOpen] = useState(false);
+  const [adminCreateRequest, setAdminCreateRequest] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gallery, setGallery] = useState<GallerySelection | null>(null);
   const [video, setVideo] = useState<VideoSelection | null>(null);
@@ -271,6 +288,8 @@ export default function App() {
 
   const navigateToAdmin = useCallback((view: Exclude<AppView, "files">) => {
     const routes: Record<Exclude<AppView, "files">, string> = {
+      transfers: "/transfers",
+      settings: "/settings",
       storages: "/admin/storages",
       users: "/admin/users",
       branding: "/admin/branding",
@@ -281,6 +300,15 @@ export default function App() {
     setAppView(view);
     setSidebarOpen(false);
   }, []);
+
+  const navigateToCore = useCallback((view: "files" | "transfers" | "settings" | "storages") => {
+    if (view === "files") {
+      navigate("/");
+      return;
+    }
+    navigateToAdmin(view);
+    setAndroidSearchOpen(false);
+  }, [navigate, navigateToAdmin]);
 
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);
@@ -540,16 +568,24 @@ export default function App() {
   const breadcrumbParts = currentPath.split("/").filter(Boolean);
   const currentName = breadcrumbParts.at(-1) ?? t("nav.files");
   const isSignedIn = Boolean(getToken());
+  const parentPath = breadcrumbParts.length > 1 ? `/${breadcrumbParts.slice(0, -1).join("/")}` : "/";
+  const androidFab = appView === "files" && canUpload
+    ? { label: t("common.upload"), icon: Upload, action: () => setUploadDialogOpen(true) }
+    : appView === "storages"
+      ? { label: "Add storage", icon: Plus, action: () => setAdminCreateRequest((value) => value + 1) }
+      : appView === "users"
+        ? { label: "Add user", icon: Plus, action: () => setAdminCreateRequest((value) => value + 1) }
+        : null;
 
   return (
     <div className="app-shell">
-      <header className="mobile-header">
+      {!androidApp && <header className="mobile-header">
         <button className="icon-button" onClick={() => setSidebarOpen(true)} title="Open navigation"><Menu size={22} /></button>
         <button className="brand brand--mobile" onClick={() => navigate("/")}><BrandMark branding={branding} /><span>{branding.name}</span></button>
         <UserButton user={user} avatarUrl={profile.avatarUrl} isSignedIn={isSignedIn} onLogin={() => setLoginOpen(true)} onLogout={signOut} onSettings={() => openSettings("profile")} compact />
-      </header>
+      </header>}
 
-      <aside className={`sidebar${sidebarOpen ? " sidebar--open" : ""}`}>
+      {!androidApp && <aside className={`sidebar${sidebarOpen ? " sidebar--open" : ""}`}>
         <div className="sidebar__top">
           <button className="brand" onClick={() => navigate("/")}><BrandMark branding={branding} /><span>{branding.name}</span></button>
           <button className="icon-button sidebar__close" onClick={() => setSidebarOpen(false)} title="Close navigation"><X size={20} /></button>
@@ -566,11 +602,30 @@ export default function App() {
         <div className="sidebar__account">
           <UserButton user={user} avatarUrl={profile.avatarUrl} isSignedIn={isSignedIn} onLogin={() => setLoginOpen(true)} onLogout={signOut} onSettings={() => openSettings("profile")} />
         </div>
-      </aside>
-      {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
+      </aside>}
+      {!androidApp && sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
 
       <main className="main-content">
-        <div className={`topbar${isAdminView(appView) ? " topbar--admin" : ""}`}>
+        {androidApp ? (
+          <AndroidTopAppBar
+            title={appView === "files" ? currentName : appView === "transfers" ? "Transfers" : appView === "settings" ? "Settings" : "Manage"}
+            fileMode={appView === "files"}
+            canGoBack={appView === "files" && currentPath !== "/"}
+            searchOpen={appView === "files" && androidSearchOpen}
+            query={query}
+            sortKey={sortKey}
+            sortDirection={sortDirection}
+            loading={loading}
+            onBack={() => navigate(parentPath)}
+            onSearchOpen={() => setAndroidSearchOpen(true)}
+            onSearchClose={() => { setAndroidSearchOpen(false); setQuery(""); }}
+            onQueryChange={setQuery}
+            onSortChange={setSortKey}
+            onSortDirectionChange={() => setSortDirection((value) => value === "asc" ? "desc" : "asc")}
+            onRefresh={forceRefresh}
+            onAdvancedSearch={() => setAdvancedSearchOpen(true)}
+          />
+        ) : <div className={`topbar${isAdminView(appView) ? " topbar--admin" : ""}`}>
           {appView === "files" ? (
             <>
               <nav className="breadcrumbs" key={currentPath} aria-label="Breadcrumb">
@@ -596,7 +651,7 @@ export default function App() {
               <span className="breadcrumb-part"><ChevronRight size={17} /><button onClick={() => navigateToAdmin(appView)}>{appView === "users" ? t("settings.users") : appView === "branding" ? t("settings.branding") : appView === "native" ? t("settings.native") : appView === "android" ? "Android app" : t("settings.storage")}</button></span>
             </nav>
           )}
-        </div>
+        </div>}
 
         {appView === "files" ? <section className="browser-section" aria-labelledby="folder-title">
           <div className="browser-heading">
@@ -635,6 +690,7 @@ export default function App() {
             <FileBrowser
               items={items}
               view={view}
+              compact={androidApp}
               loading={loading}
               directoryPath={currentPath}
               customThumbnailsEnabled={thumbnailSessionReady}
@@ -650,7 +706,23 @@ export default function App() {
           )}
 
           {data.readme && !loading && <div className="folder-readme"><h2>About this folder</h2><p>{data.readme}</p></div>}
-        </section> : (
+        </section> : appView === "transfers" ? (
+          <AndroidTransfers
+            uploads={uploads}
+            onCancel={cancelUpload}
+            onDismiss={dismissUpload}
+            onClearCompleted={clearCompletedUploads}
+          />
+        ) : appView === "settings" ? (
+          <AndroidSettingsHome
+            user={user}
+            avatarUrl={profile.avatarUrl}
+            signedIn={isSignedIn}
+            onOpen={openSettings}
+            onLogin={() => setLoginOpen(true)}
+            onLogout={() => void signOut()}
+          />
+        ) : (
           <AdminStorageGate
             user={user}
             resolved={userResolved}
@@ -662,9 +734,13 @@ export default function App() {
             thumbnailSessionReady={thumbnailSessionReady}
             branding={branding}
             onBrandingUpdated={setBranding}
+            createRequest={adminCreateRequest}
           />
         )}
       </main>
+
+      {androidApp && androidFab && (() => { const Icon = androidFab.icon; return <button className="android-fab" onClick={androidFab.action} title={androidFab.label} aria-label={androidFab.label}><Icon size={24} /></button>; })()}
+      {androidApp && <AndroidBottomNavigation view={appView} onNavigate={navigateToCore} />}
 
       {gallery && <Gallery images={gallery.images} initialIndex={gallery.index} directoryPath={currentPath} password={passwords[currentPath] ?? ""} onClose={() => setGallery(null)} />}
       {video && <VideoModal {...video} onClose={() => setVideo(null)} />}
@@ -673,7 +749,7 @@ export default function App() {
       {uploadDialogOpen && canUpload && <UploadDialog path={currentPath} onClose={() => setUploadDialogOpen(false)} onFiles={onDialogFiles} onBrowse={() => fileInputRef.current?.click()} />}
       {mediaLoading && <div className="media-loading" role="status"><LoaderCircle className="spin" size={21} /><span>Preparing {mediaLoading}</span></div>}
       {notice && <div className={`toast${noticeTone === "success" ? " toast--success" : ""}${uploads.length ? " toast--with-uploads" : ""}`} role={noticeTone === "error" ? "alert" : "status"}>{noticeTone === "success" ? <CheckCircle2 size={19} /> : <ShieldAlert size={19} />}<span>{notice}</span><button onClick={() => setNotice("")} title="Dismiss"><X size={17} /></button></div>}
-      <UploadQueue uploads={uploads} onCancel={cancelUpload} onDismiss={dismissUpload} onClearCompleted={clearCompletedUploads} />
+      {!androidApp && <UploadQueue uploads={uploads} onCancel={cancelUpload} onDismiss={dismissUpload} onClearCompleted={clearCompletedUploads} />}
       {actionMenu && selectedItems.length > 0 && <FileActionMenu point={actionMenu} count={selectedItems.length} permissions={filePermissions} canCopyLink={selectedItems.length === 1 && !selectedItems[0]?.is_dir} onAction={beginFileOperation} onClose={() => setActionMenu(null)} />}
       {fileOperation === "rename" && selectedItems.length === 1 && <RenameDialog item={selectedItems[0]} busy={operationBusy} error={operationError} onClose={closeFileOperation} onSubmit={(name) => void runFileOperation("rename", name)} />}
       {fileOperation === "delete" && selectedItems.length > 0 && <DeleteDialog items={selectedItems} busy={operationBusy} error={operationError} onClose={closeFileOperation} onConfirm={() => void runFileOperation("delete")} />}
@@ -681,7 +757,7 @@ export default function App() {
       {loginOpen && <LoginDialog busy={loginBusy} error={loginError} needsOtp={needsOtp} onClose={() => { setLoginOpen(false); setLoginError(""); }} onSubmit={submitLogin} />}
       {passwordOpen && <PasswordDialog path={currentPath} onClose={() => setPasswordOpen(false)} onSubmit={(password) => { setPasswords((value) => ({ ...value, [currentPath]: password })); setPasswordOpen(false); }} />}
       {settingsOpen && <Suspense fallback={<div className="dialog-backdrop"><div className="settings-loading" role="status"><LoaderCircle className="spin" size={23} /><span>{t("settings.loading")}</span></div></div>}><UserSettingsDialog user={isSignedIn ? user : null} profile={profile} theme={theme} themeFlowing={themeFlowing} initialSection={settingsSection} onThemeChange={setTheme} onThemeFlowingChange={setThemeFlowing} onProfileUpdated={(updated) => { setProfile(updated); setNoticeTone("success"); setNotice(t("profile.updated")); }} onLogin={() => { setSettingsOpen(false); setLoginOpen(true); }} onLogout={() => void signOut()} onClose={() => setSettingsOpen(false)} /></Suspense>}
-      <ClickRipple />
+      {!androidApp && <ClickRipple />}
     </div>
   );
 }
@@ -691,6 +767,72 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string; icon: typeof ArrowDownA
   { key: "modified", label: "Modified", icon: CalendarClock },
   { key: "size", label: "Size", icon: HardDrive },
 ];
+
+interface AndroidTopAppBarProps {
+  title: string;
+  fileMode: boolean;
+  canGoBack: boolean;
+  searchOpen: boolean;
+  query: string;
+  sortKey: SortKey;
+  sortDirection: SortDirection;
+  loading: boolean;
+  onBack: () => void;
+  onSearchOpen: () => void;
+  onSearchClose: () => void;
+  onQueryChange: (value: string) => void;
+  onSortChange: (value: SortKey) => void;
+  onSortDirectionChange: () => void;
+  onRefresh: () => void;
+  onAdvancedSearch: () => void;
+}
+
+function AndroidTopAppBar({ title, fileMode, canGoBack, searchOpen, query, sortKey, sortDirection, loading, onBack, onSearchOpen, onSearchClose, onQueryChange, onSortChange, onSortDirectionChange, onRefresh, onAdvancedSearch }: AndroidTopAppBarProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  if (searchOpen) {
+    return <header className="android-top-app-bar android-search-bar"><button className="android-icon-button" onClick={onSearchClose} title="Close search"><ArrowLeft size={23} /></button><input autoFocus value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={`Search ${title}`} aria-label={`Search ${title}`} />{query && <button className="android-icon-button" onClick={() => onQueryChange("")} title="Clear search"><X size={22} /></button>}</header>;
+  }
+  return (
+    <header className="android-top-app-bar">
+      {canGoBack && <button className="android-icon-button" onClick={onBack} title="Parent folder"><ArrowLeft size={23} /></button>}
+      <h1>{title}</h1>
+      {fileMode && <div className="android-top-app-bar__actions">
+        <button className="android-icon-button" onClick={onSearchOpen} title="Search"><Search size={23} /></button>
+        <div className="android-overflow">
+          <button className="android-icon-button" onClick={() => setMenuOpen((value) => !value)} title="More options" aria-haspopup="menu" aria-expanded={menuOpen}><MoreVertical size={23} /></button>
+          {menuOpen && <><button className="android-menu-scrim" onClick={() => setMenuOpen(false)} aria-label="Close menu" /><div className="android-overflow-menu" role="menu">
+            <span className="android-overflow-menu__label">Sort by</span>
+            {SORT_OPTIONS.map(({ key, label, icon: Icon }) => <button role="menuitemradio" aria-checked={sortKey === key} key={key} onClick={() => { onSortChange(key); setMenuOpen(false); }}><Icon size={19} /><span>{label}</span>{sortKey === key && <Check size={18} />}</button>)}
+            <span className="android-menu-divider" />
+            <button role="menuitem" onClick={() => { onSortDirectionChange(); setMenuOpen(false); }}><ArrowUpDown size={19} /><span>{sortDirection === "asc" ? "Ascending" : "Descending"}</span></button>
+            <button role="menuitem" onClick={() => { onRefresh(); setMenuOpen(false); }} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={19} /><span>Refresh</span></button>
+            <button role="menuitem" onClick={() => { onAdvancedSearch(); setMenuOpen(false); }}><SlidersHorizontal size={19} /><span>Advanced search</span></button>
+          </div></>}
+        </div>
+      </div>}
+    </header>
+  );
+}
+
+function AndroidBottomNavigation({ view, onNavigate }: { view: AppView; onNavigate: (view: "files" | "transfers" | "settings" | "storages") => void }) {
+  const destination = isAdminView(view) ? "storages" : view === "transfers" || view === "settings" ? view : "files";
+  const items = [
+    { id: "files" as const, label: "Files", icon: HardDrive },
+    { id: "transfers" as const, label: "Transfers", icon: Upload },
+    { id: "storages" as const, label: "Manage", icon: ShieldCheck },
+    { id: "settings" as const, label: "Settings", icon: Settings2 },
+  ];
+  return <nav className="android-bottom-navigation" aria-label="Primary navigation">{items.map(({ id, label, icon: Icon }) => <button className={destination === id ? "active" : ""} onClick={() => onNavigate(id)} aria-current={destination === id ? "page" : undefined} key={id}><span><Icon size={23} /></span><small>{label}</small></button>)}</nav>;
+}
+
+function AndroidTransfers({ uploads, onCancel, onDismiss, onClearCompleted }: { uploads: UploadEntry[]; onCancel: (id: string) => void; onDismiss: (id: string) => void; onClearCompleted: () => void }) {
+  const active = uploads.filter((upload) => upload.status === "uploading").length;
+  return <section className="android-destination android-transfers" aria-label="Transfers"><header><p>{active ? `${active} active` : uploads.length ? `${uploads.length} recent` : "No recent transfers"}</p>{uploads.some((upload) => upload.status !== "uploading") && <button className="android-text-button" onClick={onClearCompleted}>Clear finished</button>}</header>{uploads.length === 0 ? <div className="android-empty-state"><Upload size={40} /><h3>No transfers yet</h3><p>Uploads started from Files will appear here.</p></div> : <div className="android-transfer-list">{uploads.map((upload) => <article className="android-transfer-item" key={upload.id}><span className={`android-transfer-item__icon android-transfer-item__icon--${upload.status}`}>{upload.status === "uploading" ? <LoaderCircle className="spin" size={22} /> : upload.status === "success" ? <CheckCircle2 size={22} /> : <ShieldAlert size={22} />}</span><span><strong>{upload.name}</strong><small>{upload.status === "uploading" ? `${upload.progress}% · ${formatSize(upload.size)}` : upload.status === "success" ? `Uploaded · ${formatSize(upload.size)}` : upload.error || upload.status}</small>{upload.status === "uploading" && <i><b style={{ width: `${upload.progress}%` }} /></i>}</span><button className="android-icon-button" onClick={() => upload.status === "uploading" ? onCancel(upload.id) : onDismiss(upload.id)} title={upload.status === "uploading" ? `Cancel ${upload.name}` : `Dismiss ${upload.name}`}><X size={21} /></button></article>)}</div>}</section>;
+}
+
+function AndroidSettingsHome({ user, avatarUrl, signedIn, onOpen, onLogin, onLogout }: { user: OpenListUser | null; avatarUrl: string; signedIn: boolean; onOpen: (section: SettingsSection) => void; onLogin: () => void; onLogout: () => void }) {
+  return <section className="android-destination android-settings-home" aria-label="Settings"><div className="android-settings-account"><UserAvatar avatarUrl={avatarUrl} username={user?.username} /><span><strong>{signedIn ? user?.username : "Not signed in"}</strong><small>{signedIn ? "OpenList account" : "Sign in to manage your profile"}</small></span><button className="android-text-button" onClick={signedIn ? onLogout : onLogin}>{signedIn ? "Sign out" : "Sign in"}</button></div><div className="android-settings-list"><button onClick={() => onOpen("profile")}><CircleUserRound size={24} /><span><strong>Profile</strong><small>Avatar and account</small></span><ChevronRight size={21} /></button><button onClick={() => onOpen("language")}><Languages size={24} /><span><strong>Language</strong><small>Display language</small></span><ChevronRight size={21} /></button><button onClick={() => onOpen("appearance")}><Palette size={24} /><span><strong>Appearance</strong><small>Theme and motion</small></span><ChevronRight size={21} /></button></div></section>;
+}
 
 function SortMenu({ sortKey, onChange }: { sortKey: SortKey; onChange: (key: SortKey) => void }) {
   const [open, setOpen] = useState(false);
@@ -809,6 +951,7 @@ function AdminStorageGate({
   thumbnailSessionReady,
   branding,
   onBrandingUpdated,
+  createRequest,
 }: {
   user: OpenListUser | null;
   resolved: boolean;
@@ -820,6 +963,7 @@ function AdminStorageGate({
   thumbnailSessionReady: boolean;
   branding: FrontendBranding;
   onBrandingUpdated: (branding: FrontendBranding) => void;
+  createRequest: number;
 }) {
   const { t } = useTranslation();
   if (!resolved) {
@@ -844,5 +988,5 @@ function AdminStorageGate({
       </div>
     );
   }
-  return <><nav className="admin-tabs" aria-label={t("nav.administration")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "branding" ? "active" : ""} onClick={() => onSelectView("branding")} aria-current={view === "branding" ? "page" : undefined}>{t("settings.branding")}</button><button className={view === "android" ? "active" : ""} onClick={() => onSelectView("android")} aria-current={view === "android" ? "page" : undefined}>Android app</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button></nav>{view === "users" ? <UserManagement /> : view === "branding" ? <BrandingManagement branding={branding} onUpdated={onBrandingUpdated} /> : view === "android" ? <AndroidReleaseManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} />}</>;
+  return <><nav className="admin-tabs" aria-label={t("nav.administration")}><button className={view === "storages" ? "active" : ""} onClick={() => onSelectView("storages")} aria-current={view === "storages" ? "page" : undefined}>{t("settings.storage")}</button><button className={view === "users" ? "active" : ""} onClick={() => onSelectView("users")} aria-current={view === "users" ? "page" : undefined}>{t("settings.users")}</button><button className={view === "branding" ? "active" : ""} onClick={() => onSelectView("branding")} aria-current={view === "branding" ? "page" : undefined}>{t("settings.branding")}</button><button className={view === "android" ? "active" : ""} onClick={() => onSelectView("android")} aria-current={view === "android" ? "page" : undefined}>Android app</button><button className={view === "native" ? "active" : ""} onClick={() => onSelectView("native")} aria-current={view === "native" ? "page" : undefined}>{t("settings.native")}</button></nav>{view === "users" ? <UserManagement createRequest={createRequest} /> : view === "branding" ? <BrandingManagement branding={branding} onUpdated={onBrandingUpdated} /> : view === "android" ? <AndroidReleaseManagement /> : view === "native" ? <NativeManagement sessionReady={thumbnailSessionReady} /> : <StorageManagement onStorageChanged={onStorageChanged} createRequest={createRequest} />}</>;
 }

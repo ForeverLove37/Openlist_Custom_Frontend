@@ -1,8 +1,9 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   LoaderCircle,
+  MoreVertical,
   Pencil,
   RefreshCw,
   Trash2,
@@ -26,7 +27,8 @@ import {
 } from "../lib/users";
 import type { ManagedUser, UserFormValues } from "../lib/types";
 
-export function UserManagement() {
+export function UserManagement({ createRequest = 0 }: { createRequest?: number }) {
+  const handledCreateRequest = useRef(createRequest);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -55,6 +57,11 @@ export function UserManagement() {
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (createRequest > handledCreateRequest.current) setFormUser(null);
+    handledCreateRequest.current = createRequest;
+  }, [createRequest]);
 
   const edit = async (user: ManagedUser) => {
     setActionId(user.id);
@@ -111,7 +118,7 @@ export function UserManagement() {
         </div>
         <div className="admin-heading__actions">
           <button className="icon-button bordered-button" onClick={() => void load()} disabled={loading} title="Refresh users"><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
-          <button className="primary-button" onClick={() => setFormUser(null)}><UserPlus size={18} /> Add user</button>
+          <button className="primary-button desktop-primary-action" onClick={() => setFormUser(null)}><UserPlus size={18} /> Add user</button>
         </div>
       </div>
 
@@ -123,7 +130,7 @@ export function UserManagement() {
           <Users size={38} />
           <h2>No user accounts</h2>
           <p>Create a user account to give someone access to a chosen OpenList path.</p>
-          <button className="primary-button" onClick={() => setFormUser(null)}><UserPlus size={18} /> Add user</button>
+          <button className="primary-button desktop-primary-action" onClick={() => setFormUser(null)}><UserPlus size={18} /> Add user</button>
         </div>
       ) : (
         <div className="user-list">
@@ -133,13 +140,14 @@ export function UserManagement() {
             const protectedUser = user.role === ADMIN_ROLE || user.role === GUEST_ROLE;
             return (
               <article className="user-row" key={user.id}>
-                <div className="user-identity"><span className="user-avatar"><UserCog size={20} /></span><span><strong>{user.username}</strong><small>{user.disabled ? "Disabled" : "Active"}</small></span></div>
+                <div className="user-identity"><span className="user-avatar"><UserCog size={20} /></span><span><strong>{user.username}</strong><small>{user.disabled ? "Disabled" : "Active"}</small><small className="android-row-supporting">{roleName(user.role)} · {user.base_path || "/"}</small></span></div>
                 <div className="user-cell" data-label="Role"><span className={`role-badge role-badge--${user.role === ADMIN_ROLE ? "admin" : user.role === GUEST_ROLE ? "guest" : "user"}`}>{roleName(user.role)}</span></div>
                 <div className="user-cell user-base-path" data-label="Base path"><span title={user.base_path}>{user.base_path || "/"}</span></div>
                 <div className="user-cell user-permissions" data-label="Access"><span>{accessSummary(user)}</span></div>
                 <div className="user-actions">
-                  <button className="icon-button subtle-button" onClick={() => void edit(user)} disabled={busy} title={`Edit ${user.username}`}>{busy ? <LoaderCircle className="spin" size={18} /> : <Pencil size={18} />}</button>
-                  <button className="icon-button danger-button" onClick={() => setDeleteTarget(user)} disabled={busy || protectedUser} title={protectedUser ? `${roleName(user.role)} accounts cannot be deleted` : `Delete ${user.username}`}><Trash2 size={18} /></button>
+                  <span className="desktop-row-actions"><button className="icon-button subtle-button" onClick={() => void edit(user)} disabled={busy} title={`Edit ${user.username}`}>{busy ? <LoaderCircle className="spin" size={18} /> : <Pencil size={18} />}</button>
+                  <button className="icon-button danger-button" onClick={() => setDeleteTarget(user)} disabled={busy || protectedUser} title={protectedUser ? `${roleName(user.role)} accounts cannot be deleted` : `Delete ${user.username}`}><Trash2 size={18} /></button></span>
+                  <details className="android-row-overflow"><summary className="android-icon-button" title={`More actions for ${user.username}`}><MoreVertical size={22} /></summary><div><button onClick={() => void edit(user)} disabled={busy}><Pencil size={19} />Edit</button><button className="danger-button" onClick={() => setDeleteTarget(user)} disabled={busy || protectedUser}><Trash2 size={19} />Delete</button></div></details>
                 </div>
               </article>
             );

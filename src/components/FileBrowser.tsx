@@ -10,6 +10,7 @@ interface FileBrowserProps {
   loading: boolean;
   directoryPath: string;
   customThumbnailsEnabled: boolean;
+  compact?: boolean;
   onOpen: (item: OpenListItem) => void;
   onDownload: (item: OpenListItem) => void;
   canManage: boolean;
@@ -39,6 +40,7 @@ export function FileBrowser({
   loading,
   directoryPath,
   customThumbnailsEnabled,
+  compact = false,
   onOpen,
   onDownload,
   canManage,
@@ -92,6 +94,26 @@ export function FileBrowser({
     const bounds = event.currentTarget.getBoundingClientRect();
     onOpenActions(item, { x: bounds.right - 8, y: bounds.bottom + 4 });
   };
+
+  if (compact) {
+    return (
+      <div className="android-file-list" role="list">
+        {items.map((item) => {
+          const thumbnail = thumbnailSource(item, directoryPath, customThumbnailsEnabled);
+          const selected = selectedNames.has(item.name);
+          return (
+            <article className={`android-file-item${selected ? " android-file-item--selected" : ""}`} role="listitem" key={item.name} onContextMenu={(event) => openContextMenu(event, item)}>
+              <button className="android-file-item__main" onClick={() => handlePrimaryClick(item)} title={`Open ${item.name}`}>
+                <span className="android-file-item__icon">{thumbnail ? <img src={thumbnail} alt="" loading="lazy" decoding="async" /> : <FileIcon item={item} size={24} />}</span>
+                <span className="android-file-item__copy"><strong>{item.name}</strong><small>{item.is_dir ? `Folder · ${formatDate(item.modified)}` : `${formatSize(item.size)} · ${formatDate(item.modified)}`}</small></span>
+              </button>
+              {canActOn(item) ? <button className="android-icon-button" onClick={(event) => openButtonMenu(event, item)} title={`Actions for ${item.name}`} aria-label={`Actions for ${item.name}`}><MoreHorizontal size={22} /></button> : !item.is_dir ? <button className="android-icon-button" onClick={() => onDownload(item)} title={`Download ${item.name}`} aria-label={`Download ${item.name}`}><Download size={20} /></button> : null}
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
 
   if (view === "list") {
     return (
